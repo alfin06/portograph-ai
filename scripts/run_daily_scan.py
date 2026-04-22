@@ -6,7 +6,9 @@ from telegram import Bot
 
 # Ensure imports work from the root directory
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.graph import build_trading_graph
+from data_pipeline.crypto_scraper import CryptoScraper
+from agents.screener_agent import ScreenerAgent
+from database.db_manager import DBManager
 
 # Load environment variables
 load_dotenv()
@@ -16,52 +18,63 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 async def send_telegram_alert(decision: dict, trade_id: int):
     """Pushes a notification to your Telegram Chat ID based on the AI's decision."""
     if not TOKEN or not CHAT_ID:
-        print("⚠️ Warning: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in .env.")
-        print("Cannot send Telegram alert, but the trade is logged in the database.")
+        print("⚠️ Warning: Telegram credentials missing in .env.")
         return
 
     bot = Bot(token=TOKEN)
     
     if decision.get("action") == "BUY":
+        # Keys updated to match the Crypto Prompt: target_buy_price, target_sell_price
         text = (
-            f"🚨 *PortoGraph AI: BUY SIGNAL* 🚨\n\n"
-            f"📊 *{decision['ticker']}*\n"
-            f"Entry Price: {decision['entry_price']}\n"
-            f"Target: {decision['target_price']}\n"
-            f"Stop Loss: {decision['stop_loss']}\n\n"
-            f"🧠 *Reasoning:* {decision['reasoning']}\n\n"
-            f"👉 *Action required:* Go to your bot chat and type `/pending` to log your execution."
+            f"🚨 <b>PortoGraph AI: BUY SIGNAL</b> 🚨\n\n"
+            f"📊 <b>{decision['ticker']}</b>\n"
+            f"<b>Entry Target:</b> {decision['target_buy_price']:,.0f} IDR\n"
+            f"<b>Take Profit:</b> {decision['target_sell_price']:,.0f} IDR\n\n"
+            f"🧠 <b>Reasoning:</b> {decision['reasoning']}\n\n"
+            f"👉 <b>Trade ID: #{trade_id}</b>\n"
+            f"Action required: Go to your bot chat and type /pending to log your execution."
         )
     else:
         text = (
-            f"ℹ️ *PortoGraph AI: Market Update*\n\n"
+            f"ℹ️ <b>PortoGraph AI: Market Update</b>\n\n"
             f"No trades triggered today.\n"
-            f"Reasoning: {decision.get('reasoning', 'No viable candidates.')}"
+            f"<b>Reasoning:</b> {decision.get('reasoning', 'No viable candidates.')}"
         )
         
     try:
-        await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode='Markdown')
+        await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode='HTML')
         print("📲 Telegram alert sent successfully!")
     except Exception as e:
         print(f"❌ Failed to send Telegram alert: {e}")
 
 def main():
-    print("🚀 Starting PortoGraph AI Daily Scan...")
+    print("🚀 Starting PortoGraph AI Crypto Midnight Scan...")
     
-    # 1. Initialize the LangGraph Pipeline
-    app = build_trading_graph()
+    # 1. Fetch Crypto Data from Indodax
+    scraper = CryptoScraper()
+    snapshot = scraper.get_market_snapshot()
     
-    # 2. Run the pipeline
-    final_state = app.invoke({
-        "candidates": [],
-        "decision": {},
-        "trade_id": 0,
-        "status": "INIT"
-    })
+    if not snapshot:
+        print("❌ Scan aborted: No market data.")
+        return
+
+    # 2. Agent Analysis via Forge (gpt-5-mini)
+    agent = ScreenerAgent()
+    decision = agent.analyze_candidates(snapshot)
     
-    # 3. Extract the results
-    decision = final_state.get('decision', {})
-    trade_id = final_state.get('trade_id', 0)
+    # 3. Log the Trade in the Database (Critical for the Critic Agent)
+    trade_id = 0
+    if decision.get("action") == "BUY":
+        db = DBManager()
+        trade_id = db.log_suggested_trade(
+            ticker=decision['ticker'],
+            action="BUY",
+            suggested_price=decision['target_buy_price'],
+            target_price=decision['target_sell_price'],
+            stop_loss=decision['target_buy_price'] * 0.95, # Default 5% stop loss for Crypto
+            reasoning=decision['reasoning']
+        )
+        print(f"📝 Trade logged in DB with ID: {trade_id}")
     
     # 4. Push the Telegram notification
     asyncio.run(send_telegram_alert(decision, trade_id))
