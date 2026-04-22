@@ -8,22 +8,18 @@ from langchain_openai import ChatOpenAI
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DBManager
 
-CRITIC_SYSTEM_PROMPT = """You are the Lead Quantitative Strategist and Reflection Agent for PortoGraph AI.
-Your job is to review the trading history and user feedback for the Crypto Midnight Target strategy.
-Analyze the patterns in the wins (CLOSED_WIN) and losses (CLOSED_LOSS). 
+CRITIC_SYSTEM_PROMPT = """You are the Lead Quantitative Strategist for PortoGraph AI.
+Your job is to perform a Post-Mortem analysis on closed trades. 
 
-Look for:
-1. Ticker correlations (e.g., "Are we losing on HYPE while winning on BTC?").
-2. Target accuracy (e.g., "Was the Target Sell set too high for current volatility?").
-3. RSI/MACD effectiveness (e.g., "Did the entries happen during RSI exhaustion?").
+Compare the 'suggested_price' and 'target_price' against the actual 'pnl_percentage' achieved.
+Identify if the agent is being too aggressive (missing targets) or too conservative (exiting early).
 
 Return a structured JSON output:
 {
-    "win_rate_analysis": "Concise analysis of trade outcomes based on user feedback.",
-    "market_regime": "Inference of crypto conditions (e.g., 'Altcoin season', 'Range-bound BTC').",
+    "win_rate_analysis": "Evidence-based analysis of trade outcomes.",
+    "market_regime": "Inference of crypto conditions.",
     "adjusted_rules": [
-        "New rule for the Screener to avoid repeating past mistakes",
-        "Refined volatility adjustment for target prices"
+        "Specific, actionable rule changes for the Screener Agent."
     ]
 }
 """
