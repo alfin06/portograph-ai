@@ -77,8 +77,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.update_execution(trade_id, 0.0) 
             await query.edit_message_text(text=f"✅ Trade {trade_id} marked as ACTIVE.")
         elif action == "win":
-            db.update_feedback(trade_id, "CLOSED_WIN", 1.5, "Target hit smoothly.")
-            await query.edit_message_text(text=f"🎯 Trade {trade_id} closed as WIN.")
+            # 1. Fetch the trade from DB to get the entry price
+            trade = db.get_trade_by_id(trade_id)
+            
+            # 2. Use your actual entry price (or the suggested one if you didn't log entry)
+            entry = trade['suggested_price'] 
+            exit_price = trade['target_price']
+            
+            # 3. Calculate actual PnL: ((Exit - Entry) / Entry) * 100
+            actual_pnl = ((exit_price - entry) / entry) * 100
+            
+            # 4. Save real data to the DB
+            db.update_feedback(trade_id, "CLOSED_WIN", round(actual_pnl, 2), "Target hit via Indodax limit order.")
+            await query.edit_message_text(text=f"🎯 Trade {trade_id} closed! Actual Profit: {actual_pnl:.2f}%")
         elif action == "loss":
             db.update_feedback(trade_id, "CLOSED_LOSS", -1.5, "Stopped out.")
             await query.edit_message_text(text=f"🛑 Trade {trade_id} closed as LOSS.")
