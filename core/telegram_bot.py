@@ -27,7 +27,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Please add this to your .env file as TELEGRAM_CHAT_ID so I only talk to you.\n\n"
         f"Commands:\n"
         f"/pending - Trades waiting for execution\n"
-        f"/portfolio - View and manage your ACTIVE trades\n"
+        f"/portofolio - View and manage your ACTIVE trades\n"
         f"/reflect - Run Critic Agent analysis"
     )
 
@@ -152,7 +152,7 @@ async def reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"Rule: {rule}", reply_markup=reply_markup)
 
-async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def portofolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fetches only ACTIVE trades to show your current market exposure."""
     # Note: You'll need to add get_active_trades() to your DBManager 
     # or filter get_pending_trades() here.
@@ -160,12 +160,12 @@ async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     active_trades = [t for t in all_trades if t['status'] == 'ACTIVE']
     
     if not active_trades:
-        await update.message.reply_text("💼 Your portfolio is currently empty (no active trades).")
+        await update.message.reply_text("💼 Your portofolio is currently empty (no active trades).")
         return
 
     total_capital = sum(t['capital_allocated'] for t in active_trades)
     
-    header = f"💼 *Current Portfolio*\nTotal Capital: {total_capital:,.0f} IDR\n"
+    header = f"💼 *Current portofolio*\nTotal Capital: {total_capital:,.0f} IDR\n"
     header += "----------------------------\n"
     await update.message.reply_text(header, parse_mode='Markdown')
 
@@ -197,7 +197,7 @@ def main():
     # Register handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("pending", pending_trades))
-    app.add_handler(CommandHandler("portfolio", portfolio))
+    app.add_handler(CommandHandler("portofolio", portofolio))
     app.add_handler(CommandHandler("reflect", reflect))
     app.add_handler(CallbackQueryHandler(button_handler))
     
