@@ -11,11 +11,11 @@ class DBManager:
     def _get_connection(self):
         """Creates and returns a connection to the SQLite database."""
         conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row # Allows accessing columns by name
+        conn.row_factory = sqlite3.Row 
         return conn
 
     def _initialize_db(self):
-        """Reads the schema.sql file and executes it to create tables if they don't exist."""
+        """Reads schema.sql and creates tables if they don't exist."""
         if not os.path.exists(self.schema_path):
             raise FileNotFoundError(f"Schema file not found at {self.schema_path}")
             
@@ -40,20 +40,23 @@ class DBManager:
             conn.commit()
             return cursor.lastrowid
 
-    def update_execution(self, trade_id: int, actual_price: float):
-        """Called via Telegram when you confirm you have bought the stock."""
+    def update_execution(self, trade_id: int, actual_price: float, capital: float):
+        """
+        UPDATED: Now includes capital_allocated.
+        Called via Telegram when you confirm you have bought the asset.
+        """
         query = """
             UPDATE trade_history 
-            SET actual_execution_price = ?, status = 'ACTIVE'
+            SET actual_execution_price = ?, capital_allocated = ?, status = 'ACTIVE'
             WHERE id = ?
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(query, (actual_price, trade_id))
+            cursor.execute(query, (actual_price, capital, trade_id))
             conn.commit()
 
     def update_feedback(self, trade_id: int, status: str, pnl_percentage: float, user_feedback: str):
-        """Called the next day when you sell the stock and report the result."""
+        """Called when you sell the asset and report the result."""
         valid_statuses = ['CLOSED_WIN', 'CLOSED_LOSS', 'MISSED']
         if status not in valid_statuses:
             raise ValueError(f"Status must be one of {valid_statuses}")
@@ -69,12 +72,21 @@ class DBManager:
             conn.commit()
 
     def get_pending_trades(self):
-        """Fetches trades that the agent suggested but haven't been executed or closed yet."""
+        """Fetches trades that are either suggested (PENDING) or live (ACTIVE)."""
         query = "SELECT * FROM trade_history WHERE status IN ('PENDING', 'ACTIVE')"
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query)
             return [dict(row) for row in cursor.fetchall()]
+        
+    def get_trade_by_id(self, trade_id: int):
+        """Fetches a single trade record by its ID. Optimized and cleaned."""
+        query = "SELECT * FROM trade_history WHERE id = ?"
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (trade_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
 # Quick test execution block
 if __name__ == "__main__":
@@ -82,9 +94,9 @@ if __name__ == "__main__":
     print("Database initialized successfully.")
     
     # Test logging a trade
-    trade_id = db.log_suggested_trade("ASII", "BUY", 5000, 5075, 4900, "Volume spike detected in last 10 mins.")
-    print(f"Logged mock trade with ID: {trade_id}")
+    # trade_id = db.log_suggested_trade("ASII", "BUY", 5000, 5075, 4900, "Volume spike detected in last 10 mins.")
+    # print(f"Logged mock trade with ID: {trade_id}")
     
-    # Test fetching pending trades
-    pending = db.get_pending_trades()
-    print(f"Pending trades: {pending}")
+    # # Test fetching pending trades
+    # pending = db.get_pending_trades()
+    # print(f"Pending trades: {pending}")

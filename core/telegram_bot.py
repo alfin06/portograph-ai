@@ -74,8 +74,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action in ["bought", "win", "loss"]:
         trade_id = int(data[1])
         if action == "bought":
-            db.update_execution(trade_id, 0.0) 
-            await query.edit_message_text(text=f"✅ Trade {trade_id} marked as ACTIVE.")
+            # For now, we use a default of 5,000,000 IDR. 
+            # In the future, you could make this a dynamic input!
+            db.update_execution(trade_id, 0.0, 5000000.0) 
+            await query.edit_message_text(text=f"✅ Trade {trade_id} marked as ACTIVE with 5M IDR.")
         elif action == "win":
             # 1. Fetch the trade from DB to get the entry price
             trade = db.get_trade_by_id(trade_id)
@@ -91,8 +93,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.update_feedback(trade_id, "CLOSED_WIN", round(actual_pnl, 2), "Target hit via Indodax limit order.")
             await query.edit_message_text(text=f"🎯 Trade {trade_id} closed! Actual Profit: {actual_pnl:.2f}%")
         elif action == "loss":
-            db.update_feedback(trade_id, "CLOSED_LOSS", -1.5, "Stopped out.")
-            await query.edit_message_text(text=f"🛑 Trade {trade_id} closed as LOSS.")
+            # Fetch trade to get entry and stop loss
+            trade = db.get_trade_by_id(trade_id)
+            entry = trade['suggested_price']
+            exit_price = trade['stop_loss']
+            
+            # Calculate actual PnL (will be negative)
+            actual_pnl = ((exit_price - entry) / entry) * 100
+            
+            db.update_feedback(trade_id, "CLOSED_LOSS", round(actual_pnl, 2), "Stopped out.")
+            await query.edit_message_text(text=f"🛑 Trade {trade_id} closed as LOSS ({actual_pnl:.2f}%).")
             
     elif action == "approve":
         rule_idx = data[1]

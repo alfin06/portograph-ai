@@ -50,7 +50,18 @@ async def send_telegram_alert(decision: dict, trade_id: int):
 def main():
     print("🚀 Starting PortoGraph AI Crypto Midnight Scan...")
     
-    # 1. Fetch Crypto Data from Indodax
+    # 0. INITIALIZE DB & CHECK FOR ACTIVE TRADES (Token Saver Logic)
+    db = DBManager()
+    # Check if we already have an open position
+    active_trades = [t for t in db.get_pending_trades() if t['status'] == 'ACTIVE']
+    
+    if active_trades:
+        ticker = active_trades[0]['ticker']
+        print(f"🛑 Scan Aborted: ACTIVE position in {ticker} detected.")
+        print("💡 We are skipping the LLM analysis to save your Forge tokens.")
+        return # Exit the script here
+
+    # 1. Fetch Crypto Data from Indodax (Only happens if no active trades)
     scraper = CryptoScraper()
     snapshot = scraper.get_market_snapshot()
     
@@ -58,20 +69,19 @@ def main():
         print("❌ Scan aborted: No market data.")
         return
 
-    # 2. Agent Analysis via Forge (gpt-5-mini)
+    # 2. Agent Analysis via Forge (Only happens if no active trades)
     agent = ScreenerAgent()
     decision = agent.analyze_candidates(snapshot)
     
-    # 3. Log the Trade in the Database (Critical for the Critic Agent)
+    # 3. Log the Trade in the Database
     trade_id = 0
     if decision.get("action") == "BUY":
-        db = DBManager()
         trade_id = db.log_suggested_trade(
             ticker=decision['ticker'],
             action="BUY",
             suggested_price=decision['target_buy_price'],
             target_price=decision['target_sell_price'],
-            stop_loss=decision['target_buy_price'] * 0.95, # Default 5% stop loss for Crypto
+            stop_loss=decision['target_buy_price'] * 0.95, 
             reasoning=decision['reasoning']
         )
         print(f"📝 Trade logged in DB with ID: {trade_id}")

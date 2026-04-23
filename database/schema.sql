@@ -15,15 +15,16 @@ CREATE TABLE IF NOT EXISTS trade_history (
     date_suggested TEXT NOT NULL,
     action TEXT NOT NULL CHECK(action IN ('BUY', 'SELL')),
     suggested_price REAL NOT NULL,
-    actual_execution_price REAL,
-    target_price REAL,
-    stop_loss REAL,
+    actual_execution_price REAL DEFAULT 0,
+    capital_allocated REAL DEFAULT 0, -- NEW: Track how much IDR you actually spent
+    target_price REAL DEFAULT 0,
+    stop_loss REAL DEFAULT 0,
     status TEXT DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'ACTIVE', 'CLOSED_WIN', 'CLOSED_LOSS', 'MISSED')),
-    pnl_percentage REAL,
+    pnl_percentage REAL DEFAULT 0,
     agent_reasoning TEXT,
-    user_feedback TEXT -- E.g., "Hit stop loss because of sudden market news"
+    user_feedback TEXT 
 );
 
--- Insert your starting capital
+-- Insert your starting capital (e.g., 10 million IDR)
 INSERT OR IGNORE INTO portfolio_state (date, starting_capital) 
 VALUES (date('now'), 10000000.0);
