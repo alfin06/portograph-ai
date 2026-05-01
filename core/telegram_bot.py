@@ -162,40 +162,33 @@ async def reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"Rule: {rule}", reply_markup=reply_markup)
 
+# Updated portfolio function
 async def portofolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fetches only ACTIVE trades to show your current market exposure."""
-    # Note: You'll need to add get_active_trades() to your DBManager 
-    # or filter get_pending_trades() here.
+    """View and manage active positions."""
     all_trades = db.get_pending_trades() 
     active_trades = [t for t in all_trades if t['status'] == 'ACTIVE']
     
     if not active_trades:
-        await update.message.reply_text("💼 Your portofolio is currently empty (no active trades).")
+        await update.message.reply_text("💼 Your portfolio is empty.")
         return
 
-    total_capital = sum(t['capital_allocated'] for t in active_trades)
-    
-    header = f"💼 *Current portofolio*\nTotal Capital: {total_capital:,.0f} IDR\n"
+    # Header with capital info
+    total_at_risk = sum(t['capital_allocated'] for t in active_trades)
+    header = f"💼 <b>Active Portfolio</b>\nCapital at risk: {total_at_risk:,.0f} IDR\n"
     header += "----------------------------\n"
-    await update.message.reply_text(header, parse_mode='Markdown')
+    await update.message.reply_text(header, parse_mode='HTML')
 
     for trade in active_trades:
         text = (
-            f"🚀 *{trade['ticker']}*\n"
+            f"🚀 <b>{trade['ticker']}</b>\n"
             f"Entry: {trade['suggested_price']:,.0f} IDR\n"
-            f"Capital: {trade['capital_allocated']:,.0f} IDR\n"
-            f"Target: {trade['target_price']:,.0f} IDR\n"
-            f"Status: {trade['status']}"
+            f"TP: {trade['target_price']:,.0f} | SL: {trade['stop_loss']:,.0f}"
         )
-        
-        # Action buttons to close the trade
         keyboard = [[
-            InlineKeyboardButton("🎯 Hit Target", callback_data=f"win_{trade['id']}"),
-            InlineKeyboardButton("🛑 Hit Stop Loss", callback_data=f"loss_{trade['id']}")
+            InlineKeyboardButton("🎯 Target Hit", callback_data=f"win_{trade['id']}"),
+            InlineKeyboardButton("🛑 Stop Hit", callback_data=f"loss_{trade['id']}")
         ]]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 def main():
     if not TOKEN:

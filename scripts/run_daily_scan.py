@@ -56,10 +56,9 @@ def main():
     active_trades = [t for t in db.get_pending_trades() if t['status'] == 'ACTIVE']
     
     if active_trades:
-        ticker = active_trades[0]['ticker']
-        print(f"🛑 Scan Aborted: ACTIVE position in {ticker} detected.")
-        print("💡 We are skipping the LLM analysis to save your Forge tokens.")
-        return # Exit the script here
+        # Logic: Only one trade at a time to focus capital (5M limit)
+        print(f"⏩ Skipping Scan: Active trade in {active_trades[0]['ticker']} is still open.")
+        return
 
     # 1. Fetch Crypto Data from Indodax (Only happens if no active trades)
     scraper = CryptoScraper()
