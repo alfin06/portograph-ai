@@ -78,9 +78,5 @@ Troubleshooting
 - If chat id is missing: start the bot, send `/start` to your bot, then check logs for the printed chat id.
 - Missing dependencies: re-run `pip install -r requirements.txt` or confirm your virtual environment is active.
 
-Contributing
-- Bug reports and feature requests: open an issue or submit a pull request.
-- Keep changes small and include tests or a short reproduction script when possible.
-
-License & disclaimer
-- This project is provided for educational and research purposes only. Trading carries risk — validate backtests before using real capital.
+Disclaimer
+- This project is provided for personal and research use only. It is not intended for commercial use, distribution, or deployment. Trading carries risk — validate backtests before using real capital.
