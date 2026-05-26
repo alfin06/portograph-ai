@@ -1,6 +1,6 @@
 # PortoGraph AI
 
-A lightweight trading assistant that combines Telegram-driven approvals, rule-based screening, and Google Generative AI for reflective analysis. Designed for educational and research use with the Indonesian Stock Exchange (IDX).
+A lightweight trading assistant that combines Telegram-driven approvals, rule-based screening, and Google Generative AI for reflective analysis. Designed for personal, educational and research use.
 
 Overview
 - **Purpose:** Automate daily market scans, notify setups via Telegram, and iterate on screening rules using a Critic Agent.
