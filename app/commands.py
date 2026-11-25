@@ -16,6 +16,7 @@ from html import escape
 from app.analytics.screener import FIELDS, RuleError, collect_metrics, parse_rule
 from app.analytics.snapshot import build_snapshot, market_snapshots
 from app.jobs import update_fundamentals
+from app.jobs.update_prices import last_closed_session, top_up
 from app.symbols import Instrument
 
 MARKETS = {"idx": "IDX", "us": "US"}
@@ -224,3 +225,166 @@ def cmd_sentiment(db, args: list[str], provider=None) -> str:
     blocks.append("<i>0 = extreme fear, 100 = extreme greed. Each input is ranked against its "
                   "own past year. Our own estimate from Yahoo data, not CNN's index.</i>")
     return "\n\n".join(blocks)
+
+
+# --- ETFs ------------------------------------------------------------------------
+JUTA_100 = 100_000_000  # Rp 100 juta, the reference amount for fee examples
+
+
+def _pretty_sector(key: str) -> str:
+    return key.replace("_", " ").title().replace("Realestate", "Real Estate")
+
+
+def _us_close(db, symbol: str, provider=None):
+    """Price history for a US symbol, fetched and stored if we don't have a year of it."""
+    inst = Instrument(symbol.upper(), "US", "ETF", "USD")
+    hist = db.get_price_history(symbol)
+    if len(hist) < 260:
+        if provider is None:
+            from app.providers.yahoo import YahooProvider
+            provider = YahooProvider()
+        got = provider.get_history([inst], period="2y")
+        if symbol.upper() in got:
+            df = got[symbol.upper()]
+            db.upsert_price_bars(symbol.upper(), df[df.index.date <= last_closed_session("US")])
+    else:
+        top_up(db, [inst], provider)
+    hist = db.get_price_history(symbol)
+    return None if hist.empty else hist["Close"]
+
+
+def _idr_short(v: float | None) -> str:
+    if v is None:
+        return "n/a"
+    if v >= 1e6:
+        return f"Rp {v / 1e6:,.1f} juta"
+    return f"Rp {v / 1e3:,.0f} rb" if v >= 1e3 else f"Rp {v:,.0f}"
+
+
+def cmd_etf(db, args: list[str], funds_provider=None) -> str:
+    from app.analytics import etf
+
+    if len(args) != 1:
+        return "Usage: /etf SYMBOL   e.g. /etf VOO (US-listed ETFs)"
+    sym = args[0].upper()
+    p = etf.get_profile(db, sym, provider=funds_provider)
+    if p is None:
+        return f"❌ No ETF data for {escape(sym)}. Is it a US-listed ETF?"
+
+    er = p.get("expense_ratio")
+    lines = [f"<b>{escape(sym)}</b> · {escape(p.get('name') or '')}",
+             " · ".join(escape(x) for x in (p.get("category"), p.get("family"),
+                                             p.get("inception") and f"since {p['inception']}") if x),
+             f"Expense {_fmt(er, '%', digits=2)}/yr: {_idr_short(etf.annual_fee(er, JUTA_100))} a year per "
+             f"Rp 100 juta, ~{_idr_short(etf.fee_drag(er, JUTA_100))} less after 10 years*"]
+    aum = p.get("aum_usd")
+    lines.append(f"AUM {'n/a' if aum is None else f'${aum / 1e9:,.1f}B'} · Yield {_fmt(p.get('yield'), '%', 2)}"
+                 f" · Turnover {_fmt(p.get('turnover'), '%', 0)}")
+    top = p.get("top_holdings") or []
+    if top:
+        lines.append(f"\nTop {len(top)} holdings = {sum(h['weight'] for h in top):.1f}% of the fund")
+        rows = [f"{h['symbol'][:6]:<7}{h['name'][:18]:<19}{h['weight']:5.1f}%" for h in top]
+        lines.append("<pre>" + escape("\n".join(rows)) + "</pre>")
+    sectors = sorted((p.get("sectors") or {}).items(), key=lambda kv: -kv[1])[:5]
+    if sectors:
+        lines.append("Sectors: " + ", ".join(f"{_pretty_sector(k)} {v:.0f}%" for k, v in sectors))
+    lines.append(f"\n<i>*vs a zero-fee fund at 7%/yr. Yahoo data as of {p['as_of']}.</i>")
+    return "\n".join(lines)
+
+
+def cmd_overlap(db, args: list[str], funds_provider=None, provider=None) -> str:
+    from app.analytics import etf
+
+    if len(args) != 2:
+        return "Usage: /overlap ETF1 ETF2   e.g. /overlap VOO QQQM"
+    a, b = (x.upper() for x in args)
+    pa, pb = (etf.get_profile(db, s, provider=funds_provider) for s in (a, b))
+    missing = [s for s, p in ((a, pa), (b, pb)) if p is None]
+    if missing:
+        return f"❌ No ETF data for {escape(', '.join(missing))}."
+    ov = etf.compare(pa, pb, _us_close(db, a, provider), _us_close(db, b, provider))
+
+    lines = [f"<b>{escape(a)} vs {escape(b)}</b>",
+             f"Expense: {escape(a)} {_fmt(pa.get('expense_ratio'), '%', 2)} · "
+             f"{escape(b)} {_fmt(pb.get('expense_ratio'), '%', 2)}"]
+    if ov.correlation is not None:
+        lines.append(f"Return correlation (last {ov.corr_days} days): <b>{ov.correlation:.2f}</b>")
+    if ov.sector_pct is not None:
+        lines.append(f"Sector overlap: <b>{ov.sector_pct:.0f}%</b>")
+    lines.append(f"Top-holdings overlap: <b>{ov.holdings_pct:.1f}%</b> (the top holdings listed are "
+                 f"{ov.coverage_a:.0f}% of {escape(a)} and {ov.coverage_b:.0f}% of {escape(b)})")
+    if ov.shared:
+        rows = [f"{'Shared':<7}{a[:6]:>7}{b[:6]:>7}"] + \
+               [f"{s[:6]:<7}{wa:6.1f}%{wb:6.1f}%" for s, wa, wb in ov.shared]
+        lines.append("<pre>" + escape("\n".join(rows)) + "</pre>")
+    lines.append(f"Read: {escape(etf.similarity_label(ov))}.")
+    lines.append("<i>Yahoo only lists each fund's top 10 holdings, so the true holdings overlap is at "
+                 "least the figure shown. Correlation and sectors cover the whole fund.</i>")
+    return "\n".join(lines)
+
+
+# --- currency-adjusted returns -------------------------------------------------------
+def cmd_compare(db, args: list[str], provider=None, now=None) -> str:
+    from app.analytics.fx_returns import PERIOD_NAMES, currency_return
+
+    usage = (f"Usage: /compare SYM SYM ... [{'|'.join(PERIOD_NAMES)}]\n"
+             "Example: /compare BBCA VOO QQQM 1y")
+    if not args:
+        return usage
+    period = "1y"
+    if args[-1].lower() in PERIOD_NAMES:
+        period, args = args[-1].lower(), args[:-1]
+    if not args or len(args) > 8:
+        return usage
+
+    found, problems, insts = [], [], []
+    for raw in args:
+        inst = db.get_instrument(raw)
+        if inst is None or not inst["active"]:
+            problems.append(f"{raw.upper()} isn't on your watchlist (/watch it first)")
+            continue
+        insts.append(inst)
+    try:  # bring stored prices up to the last finished session before comparing
+        top_up(db, [Instrument(i["symbol"], i["market"], i["asset_type"], i["currency"]) for i in insts],
+               provider, now)
+    except Exception as e:
+        problems.append(f"couldn't refresh prices ({type(e).__name__}), using stored data")
+    usdidr = db.get_fx_history("USDIDR")
+    for inst in insts:
+        hist = db.get_price_history(inst["symbol"])
+        if hist.empty:
+            problems.append(f"{inst['symbol']}: no prices stored yet")
+            continue
+        found.append((inst, hist["Close"]))
+
+    # One common end date (IDX and US close on different days), so every row
+    # covers the same window and the same currency move
+    results = []
+    common_end = min((c.index[-1] for _, c in found), default=None)
+    for inst, close in found:
+        r = currency_return(inst["symbol"], inst["currency"], close[close.index <= common_end],
+                            usdidr, period)
+        if r is None:
+            problems.append(f"{inst['symbol']}: not enough history for {period}")
+        else:
+            results.append(r)
+
+    lines = []
+    if results:
+        end = max(r.end for r in results)
+        span = "year to date" if period == "ytd" else f"over {period}"
+        lines.append(f"<b>Returns {span}</b> to {end:%d %b %Y}, dividends reinvested")
+        rows = [f"{'SYM':<7}{'Local':>7}{'in IDR':>8}{'in USD':>8}"] + [
+            f"{r.symbol[:6]:<7}{r.local:+7.1f}{r.idr:+8.1f}{r.usd:+8.1f}" for r in results]
+        lines.append("<pre>" + escape("\n".join(rows)) + "</pre>")
+        fx = results[0].fx
+        weaker = "weakened" if fx > 0 else "strengthened"
+        lines.append(f"USD/IDR {fx:+.1f}% (rupiah {weaker}). A weaker rupiah adds to US returns in IDR "
+                     f"and cuts IDX returns in USD.")
+        us = [r for r in results if r.currency == "USD"]
+        for r in us[:3]:
+            lines.append(f"• {escape(r.symbol)} in IDR {r.idr:+.1f}% = {r.local:+.1f}% price "
+                         f"{'+' if r.fx >= 0 else '−'} {abs(r.fx):.1f}% currency (compounded)")
+    if problems:
+        lines.append("\n".join(f"⚠️ {escape(p, quote=False)}" for p in problems))
+    return "\n".join(lines) if lines else usage

@@ -51,7 +51,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"/screen NAME|RULE - Run a screen now\n"
         f"/addscreen NAME [idx|us] RULE - Save a screen\n"
         f"/delscreen NAME - Delete a screen\n"
-        f"/sentiment [idx|us] - Fear & greed score"
+        f"/sentiment [idx|us] - Fear & greed score\n"
+        f"/etf SYM - ETF fees, holdings, sectors\n"
+        f"/overlap ETF1 ETF2 - How similar two ETFs are\n"
+        f"/compare SYM SYM [1m|3m|6m|1y|2y|ytd] - Returns in IDR and USD"
     )
 
 @owner_only
@@ -288,6 +291,9 @@ def main():
     app.add_handler(CommandHandler("addscreen", _text_command(cmd.cmd_addscreen)))
     app.add_handler(CommandHandler("delscreen", _text_command(cmd.cmd_delscreen)))
     app.add_handler(CommandHandler("sentiment", _text_command(cmd.cmd_sentiment, slow=True)))
+    app.add_handler(CommandHandler("etf", _text_command(cmd.cmd_etf, slow=True)))
+    app.add_handler(CommandHandler("overlap", _text_command(cmd.cmd_overlap, slow=True)))
+    app.add_handler(CommandHandler("compare", _text_command(cmd.cmd_compare, slow=True)))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 PortoGraph AI Telegram Bot is running...")

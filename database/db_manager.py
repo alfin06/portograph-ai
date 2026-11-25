@@ -153,6 +153,29 @@ class DBManager:
         return dict(row) if row else None
 
     # ------------------------------------------------------------------
+    # ETF profiles
+    # ------------------------------------------------------------------
+    def upsert_etf_profile(self, symbol: str, as_of: str, source: str, data: dict):
+        import json
+        query = """
+            INSERT INTO etf_profiles (symbol, as_of, source, data) VALUES (?, ?, ?, ?)
+            ON CONFLICT(symbol) DO UPDATE SET
+                as_of = excluded.as_of, source = excluded.source, data = excluded.data
+        """
+        with self._get_connection() as conn:
+            conn.execute(query, (symbol.upper(), as_of, source, json.dumps(data)))
+
+    def get_etf_profile(self, symbol: str) -> dict | None:
+        """Returns the stored profile dict plus 'as_of', or None."""
+        import json
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT as_of, data FROM etf_profiles WHERE symbol = ?",
+                               (symbol.upper(),)).fetchone()
+        if row is None:
+            return None
+        return {**json.loads(row["data"]), "as_of": row["as_of"]}
+
+    # ------------------------------------------------------------------
     # Screens
     # ------------------------------------------------------------------
     def get_screens(self, market: str | None = None, active_only: bool = True) -> list[dict]:

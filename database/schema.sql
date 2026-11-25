@@ -121,3 +121,16 @@ INSERT OR IGNORE INTO screens (name, rule, market) VALUES
     ('value_idx', 'pe < 12 and pb < 2 and roe > 15', 'IDX'),
     ('dividend', 'div_yield > 5 and roe > 12', NULL),
     ('oversold_quality', 'rsi < 35 and roe > 12', NULL);
+
+-- =====================================================================
+-- ETF profiles (Phase 3)
+-- =====================================================================
+
+-- Latest profile per ETF as JSON: expense ratio, AUM, category, sector
+-- weights and top holdings (Yahoo only publishes the top 10)
+CREATE TABLE IF NOT EXISTS etf_profiles (
+    symbol TEXT PRIMARY KEY,
+    as_of TEXT NOT NULL,                    -- YYYY-MM-DD fetched
+    source TEXT NOT NULL,
+    data TEXT NOT NULL
+);

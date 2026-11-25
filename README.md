@@ -10,7 +10,7 @@ Folder structure
 - **app/**: multi-market investing core (IDX, US stocks, US ETFs)
   - `app/providers/`: data sources behind one interface (`yahoo.py` prices, `yahoo_fundamentals.py` ratios)
   - `app/jobs/`: jobs (`update_prices.py`, `update_fundamentals.py`, `digest.py`)
-  - `app/analytics/`: shared numbers (returns, RSI, 52-week range, signals, screener) used by the bot, jobs and future web app
+  - `app/analytics/`: shared numbers (returns, RSI, 52-week range, signals, screener, sentiment, ETF overlap, currency-adjusted returns) used by the bot, jobs and future web app
   - `app/commands.py`: logic behind the Telegram commands (testable without Telegram)
   - `app/reports/`: message formatting; `app/notify/`: Telegram push
   - `app/worker.py`: scheduler that sends the daily close digests
@@ -71,6 +71,11 @@ Market mood (fear & greed)
   - IDX: IHSG vs its 125-day average, IHSG 20-day volatility, USD/IDR 20-day change, EIDO vs S&P 500 (20d) as a proxy for foreign appetite for Indonesia
 - Per-stock foreign buy/sell is not included: IDX blocks automated access and the API providers that resell it are paid.
 
+ETFs and currency
+- `/etf VOO`: expense ratio with its cost in rupiah (per Rp 100 juta a year, and over 10 years vs a zero-fee fund at 7%), AUM, yield, turnover, top 10 holdings and sector mix. Works for any US-listed ETF; profiles are cached for 7 days.
+- `/overlap VOO QQQM`: how similar two ETFs are, three ways: daily-return correlation over the last year, sector overlap (whole fund) and top-holdings overlap. Yahoo only lists the top 10 holdings and most issuers block automated holdings downloads, so the holdings figure is a lower bound.
+- `/compare BBCA VOO QQQM 1y`: returns in the asset's own currency, in IDR and in USD, plus how much of a US asset's IDR return came from the rupiah moving. Periods: 1m, 3m, 6m, 1y, 2y, ytd. Prices are dividend-adjusted, and every row uses the same end date and currency move so IDX and US rows compare fairly.
+
 Telegram commands
 - `/digest idx|us` latest close digest
 - `/fund BBCA` fundamentals and price snapshot
@@ -78,6 +83,7 @@ Telegram commands
 - `/screens` saved screens and fields · `/screen value_idx` or `/screen roe > 15 and pb < 2` run now
 - `/addscreen cheap_banks idx pb < 1.5 and roe > 12` save · `/delscreen cheap_banks` delete
 - `/sentiment` or `/sentiment idx` fear & greed score with each input
+- `/etf VOO`, `/overlap VOO QQQM`, `/compare BBCA VOO 1y` ETF details, ETF similarity, returns in IDR and USD
 
 Optional crypto module:
 
