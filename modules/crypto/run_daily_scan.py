@@ -4,10 +4,8 @@ import asyncio
 from dotenv import load_dotenv
 from telegram import Bot
 
-# Ensure imports work from the root directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data_pipeline.crypto_scraper import CryptoScraper
-from agents.screener_agent import ScreenerAgent
+from modules.crypto.scraper import CryptoScraper
+from modules.crypto.screener_agent import ScreenerAgent
 from database.db_manager import DBManager
 
 # Load environment variables

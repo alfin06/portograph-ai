@@ -4,9 +4,8 @@ import sys
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.prompts import SCREENER_SYSTEM_PROMPT 
+from modules.crypto.prompts import SCREENER_SYSTEM_PROMPT 
 from core.config import RULES_PATH, FORGE_API_KEY, FORGE_BASE_URL, LLM_MODEL
 
 class ScreenerAgent:

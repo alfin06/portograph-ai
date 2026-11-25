@@ -4,8 +4,6 @@ import pandas as pd
 import yfinance as yf
 from dotenv import load_dotenv
 
-# Ensure imports work from the root directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_pipeline.indicators import TechnicalIndicators
 
 load_dotenv()

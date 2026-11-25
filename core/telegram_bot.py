@@ -6,10 +6,23 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Add the parent directory to the path so we can import the database manager
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DBManager
 from agents.critic_agent import CriticAgent
+from core.config import TELEGRAM_CHAT_ID
+import functools
+
+
+def owner_only(handler):
+    """Ignore anyone except the owner once TELEGRAM_CHAT_ID is set.
+    Before it is set, everything is allowed so /start can show you your chat ID."""
+    @functools.wraps(handler)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat = update.effective_chat
+        if TELEGRAM_CHAT_ID and (chat is None or str(chat.id) != str(TELEGRAM_CHAT_ID)):
+            print(f"Ignored update from unauthorized chat {getattr(chat, 'id', None)}")
+            return
+        return await handler(update, context)
+    return wrapper
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +31,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Initialize database
 db = DBManager()
 
+@owner_only
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /start command and gives you your Chat ID."""
     chat_id = update.message.chat_id
@@ -28,9 +42,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Commands:\n"
         f"/pending - Trades waiting for execution\n"
         f"/portofolio - View and manage your ACTIVE trades\n"
-        f"/reflect - Run Critic Agent analysis"
+        f"/reflect - Run Critic Agent analysis\n"
+        f"/digest idx|us - Latest market close digest"
     )
 
+@owner_only
 async def pending_trades(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Fetches pending trades from the database and displays them with action buttons."""
     trades = db.get_pending_trades()
@@ -64,6 +80,7 @@ async def pending_trades(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
 
+@owner_only
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer() 
@@ -127,6 +144,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "reject":
         await query.edit_message_text(text="❌ Rule Rejected. It will not be added to the agent.")
 
+@owner_only
 async def reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Triggers the Critic Agent to review past trades and propose new rules."""
     await update.message.reply_text("🔍 Critic Agent is analyzing your trade history. Please wait...")
@@ -162,7 +180,39 @@ async def reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(f"Rule: {rule}", reply_markup=reply_markup)
 
+class _Collector:
+    """Notifier that keeps the text so the bot can reply with it."""
+    def __init__(self):
+        self.messages = []
+
+    def send(self, text, parse_mode="HTML"):
+        self.messages.append(text)
+
+
+@owner_only
+async def digest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/digest idx | /digest us : refresh prices and show the latest close digest."""
+    from app.jobs import digest
+    from app.notify.telegram import split_message
+
+    market = (context.args[0].upper() if context.args else "IDX")
+    if market not in ("IDX", "US"):
+        await update.message.reply_text("Usage: /digest idx  or  /digest us")
+        return
+    await update.message.reply_text(f"⏳ Building {market} digest...")
+    collector = _Collector()
+    try:
+        await asyncio.to_thread(digest.run, market, collector, db)
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Digest failed: {type(e).__name__}: {e}")
+        return
+    for text in collector.messages:
+        for chunk in split_message(text):
+            await update.message.reply_text(chunk, parse_mode="HTML")
+
+
 # Updated portfolio function
+@owner_only
 async def portofolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """View and manage active positions."""
     all_trades = db.get_pending_trades() 
@@ -202,6 +252,7 @@ def main():
     app.add_handler(CommandHandler("pending", pending_trades))
     app.add_handler(CommandHandler("portofolio", portofolio))
     app.add_handler(CommandHandler("reflect", reflect))
+    app.add_handler(CommandHandler("digest", digest_cmd))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 PortoGraph AI Telegram Bot is running...")

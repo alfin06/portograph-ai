@@ -67,28 +67,3 @@ class TechnicalIndicators:
         df = TechnicalIndicators.add_macd(df)
         df = TechnicalIndicators.add_volume_surge(df)
         return df
-
-if __name__ == "__main__":
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from data_pipeline.crypto_scraper import CryptoScraper
-    
-    print("Testing Technical Indicators with LIVE Crypto data...")
-    # Use the corrected UPPERCASE symbols for the test
-    scraper = CryptoScraper(tickers=['BTCIDR', 'ETHIDR', 'HYPEIDR'])
-    market_data = scraper.fetch_ohlcv(days=60)
-    
-    for ticker, df in market_data.items():
-        # Apply your logic
-        df_with_ti = TechnicalIndicators.add_all_indicators(df)
-        
-        if not df_with_ti.empty:
-            latest = df_with_ti.iloc[-1]
-            print(f"\n--- {ticker} Technicals ---")
-            print(f"Price:      {latest['Close']:,.0f} IDR")
-            print(f"RSI (14):   {latest['RSI']}")
-            print(f"MACD Hist:  {latest['MACD_Hist']}")
-            print(f"Vol Surge:  {latest['Vol_Surge']}x")
-        else:
-            print(f"❌ Failed to process indicators for {ticker}")

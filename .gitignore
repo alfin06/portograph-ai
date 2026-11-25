@@ -1,4 +1,18 @@
+# Secrets
 .env
-*/__pycache__/*
-*/__init__.py
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Logs
 *.log
+
+# Local runtime data (keep schema, not the live DB)
+database/*.db
+database/*.db-wal
+database/*.db-shm
+database/*.db-journal

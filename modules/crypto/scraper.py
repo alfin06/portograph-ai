@@ -5,7 +5,6 @@ import requests
 import time
 from dotenv import load_dotenv
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_pipeline.indicators import TechnicalIndicators
 
 load_dotenv()

@@ -3,11 +3,9 @@ import sys
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
 
-# Ensure imports work regardless of where the script is run
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_pipeline.crypto_scraper import CryptoScraper # Updated import
-from agents.screener_agent import ScreenerAgent
+from modules.crypto.scraper import CryptoScraper
+from modules.crypto.screener_agent import ScreenerAgent
 from database.db_manager import DBManager
 from core.config import STOP_LOSS_MULTIPLIER
 

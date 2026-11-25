@@ -1,17 +1,21 @@
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+
+import pandas as pd
+
+from core.config import DB_PATH, SCHEMA_PATH
 
 class DBManager:
-    def __init__(self, db_path="database/portograph.db", schema_path="database/schema.sql"):
+    def __init__(self, db_path: str = DB_PATH, schema_path: str = SCHEMA_PATH):
         self.db_path = db_path
         self.schema_path = schema_path
         self._initialize_db()
 
     def _get_connection(self):
         """Creates and returns a connection to the SQLite database."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row 
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
         return conn
 
     def _initialize_db(self):
@@ -23,6 +27,8 @@ class DBManager:
             schema_script = f.read()
 
         with self._get_connection() as conn:
+            # WAL lets the bot, the scheduler and (later) the API use the DB at the same time
+            conn.execute("PRAGMA journal_mode=WAL")
             cursor = conn.cursor()
             cursor.executescript(schema_script)
             conn.commit()
@@ -87,6 +93,115 @@ class DBManager:
             cursor.execute(query, (trade_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    # ------------------------------------------------------------------
+    # Instruments (watchlist + holdings)
+    # ------------------------------------------------------------------
+    def get_instruments(self, market: str | None = None, active_only: bool = True) -> list[dict]:
+        query = "SELECT * FROM instruments WHERE 1=1"
+        params: list = []
+        if active_only:
+            query += " AND active = 1"
+        if market:
+            query += " AND market = ?"
+            params.append(market)
+        query += " ORDER BY market, symbol"
+        with self._get_connection() as conn:
+            return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+    def add_instrument(self, symbol: str, market: str, asset_type: str, currency: str, is_holding: bool = False):
+        query = """
+            INSERT INTO instruments (symbol, market, asset_type, currency, is_holding, active)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(symbol) DO UPDATE SET active = 1, is_holding = excluded.is_holding
+        """
+        with self._get_connection() as conn:
+            conn.execute(query, (symbol.upper(), market, asset_type, currency, int(is_holding)))
+
+    # ------------------------------------------------------------------
+    # Price + FX history
+    # ------------------------------------------------------------------
+    def upsert_price_bars(self, symbol: str, df: pd.DataFrame) -> int:
+        rows = [
+            (symbol, idx.strftime("%Y-%m-%d"), r.Open, r.High, r.Low, r.Close, r.Volume)
+            for idx, r in df.iterrows()
+        ]
+        query = """
+            INSERT INTO price_bars (symbol, date, open, high, low, close, volume)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, date) DO UPDATE SET
+                open = excluded.open, high = excluded.high, low = excluded.low,
+                close = excluded.close, volume = excluded.volume
+        """
+        with self._get_connection() as conn:
+            conn.executemany(query, rows)
+        return len(rows)
+
+    def get_price_history(self, symbol: str, days: int | None = None) -> pd.DataFrame:
+        query = "SELECT date, open, high, low, close, volume FROM price_bars WHERE symbol = ? ORDER BY date"
+        with self._get_connection() as conn:
+            df = pd.read_sql_query(query, conn, params=(symbol.upper(),))
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").rename(columns=str.capitalize)
+        return df.tail(days) if days else df
+
+    def upsert_fx(self, pair: str, series: pd.Series) -> int:
+        rows = [(pair, idx.strftime("%Y-%m-%d"), float(v)) for idx, v in series.dropna().items()]
+        query = """
+            INSERT INTO fx_rates (pair, date, rate) VALUES (?, ?, ?)
+            ON CONFLICT(pair, date) DO UPDATE SET rate = excluded.rate
+        """
+        with self._get_connection() as conn:
+            conn.executemany(query, rows)
+        return len(rows)
+
+    def get_fx_history(self, pair: str, days: int | None = None) -> pd.Series:
+        with self._get_connection() as conn:
+            df = pd.read_sql_query(
+                "SELECT date, rate FROM fx_rates WHERE pair = ? ORDER BY date", conn, params=(pair,)
+            )
+        if df.empty:
+            return pd.Series(dtype=float, name=pair)
+        s = df.set_index(pd.to_datetime(df["date"]))["rate"].rename(pair)
+        return s.tail(days) if days else s
+
+    def get_latest_fx(self, pair: str) -> float | None:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT rate FROM fx_rates WHERE pair = ? ORDER BY date DESC LIMIT 1", (pair,)
+            ).fetchone()
+        return row["rate"] if row else None
+
+    # ------------------------------------------------------------------
+    # Alert de-duplication
+    # ------------------------------------------------------------------
+    def should_fire_alert(self, alert_key: str, cooldown_hours: float, now: datetime | None = None) -> bool:
+        """True if this alert has never fired or its cooldown has passed."""
+        now = now or datetime.now()
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT last_fired_at FROM alert_state WHERE alert_key = ?", (alert_key,)
+            ).fetchone()
+        if row is None:
+            return True
+        last = datetime.fromisoformat(row["last_fired_at"])
+        return now - last >= timedelta(hours=cooldown_hours)
+
+    def mark_alert_fired(self, alert_key: str, value: float | None = None, now: datetime | None = None):
+        now = now or datetime.now()
+        query = """
+            INSERT INTO alert_state (alert_key, last_fired_at, last_value) VALUES (?, ?, ?)
+            ON CONFLICT(alert_key) DO UPDATE SET
+                last_fired_at = excluded.last_fired_at, last_value = excluded.last_value
+        """
+        with self._get_connection() as conn:
+            conn.execute(query, (alert_key, now.isoformat(timespec="seconds"), value))
+
+    def clear_alert(self, alert_key: str):
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM alert_state WHERE alert_key = ?", (alert_key,))
 
 # Quick test execution block
 if __name__ == "__main__":

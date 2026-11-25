@@ -4,8 +4,6 @@ import json
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 
-# Ensure imports work regardless of execution context
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DBManager
 
 CRITIC_SYSTEM_PROMPT = """You are the Lead Quantitative Strategist for PortoGraph AI.
