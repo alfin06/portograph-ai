@@ -1,0 +1,19 @@
+# Secrets come in at run time via env_file, never in the image
+.env
+.env.*
+
+# Local runtime state (mounted as a volume instead)
+data/
+logs/
+database/*.db
+database/*.db-*
+database/backups/
+
+# Dev clutter
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.claude/

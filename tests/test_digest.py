@@ -188,18 +188,18 @@ class FakeScheduler:
         self.jobs.append((trigger, kw))
 
 
-def test_worker_schedules_both_markets_in_exchange_time():
+def test_worker_schedules_both_markets_in_exchange_time(db):
     sched = FakeScheduler()
-    Worker(scheduler=sched).schedule()
+    Worker(scheduler=sched, db=db).schedule()
     by_id = {kw["id"]: trig for trig, kw in sched.jobs}
-    assert set(by_id) == {"digest_IDX", "digest_US"}
+    assert set(by_id) == {"digest_IDX", "digest_US", "catch_up", "backup"}
     assert str(by_id["digest_IDX"].timezone) == "Asia/Jakarta"
     assert str(by_id["digest_US"].timezone) == "America/New_York"
 
 
-def test_worker_retries_then_gives_up(monkeypatch):
+def test_worker_retries_then_gives_up(monkeypatch, db):
     sched, rec = FakeScheduler(), Recorder()
-    w = Worker(scheduler=sched, notifier=rec)
+    w = Worker(scheduler=sched, notifier=rec, db=db)
     monkeypatch.setattr(digest, "run", lambda *a, **k: digest.DigestResult("no_session_data"))
     w.run_digest("IDX", date(2026, 11, 25))
     assert len(sched.jobs) == 1 and sched.jobs[0][1]["args"][2] == 1
@@ -210,9 +210,9 @@ def test_worker_retries_then_gives_up(monkeypatch):
                         "Try /digest idx later."]
 
 
-def test_worker_reports_failures_to_telegram(monkeypatch):
+def test_worker_reports_failures_to_telegram(monkeypatch, db):
     rec = Recorder()
-    w = Worker(scheduler=FakeScheduler(), notifier=rec)
+    w = Worker(scheduler=FakeScheduler(), notifier=rec, db=db)
 
     def boom(*a, **k):
         raise ValueError("feed broke")

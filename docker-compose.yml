@@ -1,0 +1,12 @@
+# On a server:  docker compose up -d --build
+# Logs:         docker compose logs -f   (or data/logs/*.log)
+# Stop:         docker compose down
+services:
+  portograph:
+    build: .
+    image: portograph-ai
+    restart: unless-stopped
+    env_file: .env          # same file as on Windows; never baked into the image
+    volumes:
+      - ./data:/app/data    # database, backups and logs: the only state to move
+    stop_grace_period: 30s

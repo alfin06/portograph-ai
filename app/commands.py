@@ -388,3 +388,34 @@ def cmd_compare(db, args: list[str], provider=None, now=None) -> str:
     if problems:
         lines.append("\n".join(f"⚠️ {escape(p, quote=False)}" for p in problems))
     return "\n".join(lines) if lines else usage
+
+
+# --- status ----------------------------------------------------------------------------
+def cmd_status(db, args: list[str] | None = None, now=None) -> str:
+    """Is the always-on part alive? Last digest per market, newest prices, last backup."""
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from core import config
+
+    now = now or datetime.now(timezone.utc)
+    lines = ["<b>PortoGraph status</b>"]
+    runs = {r["job"]: r for r in db.get_last_job_runs()}
+    for market in ("IDX", "US"):
+        r = runs.get(f"digest_{market}")
+        if r is None:
+            lines.append(f"{market} digest: no scheduled run recorded yet")
+            continue
+        ago = (now - datetime.fromisoformat(r["ran_at"])).total_seconds() / 3600
+        lines.append(f"{market} digest: {escape(r['status'])} for {r['session_date']} ({ago:,.0f}h ago)")
+    for market in ("IDX", "US"):
+        latest = [db.get_price_history(i["symbol"], days=10) for i in db.get_instruments(market=market)]
+        dates = [h.index[-1] for h in latest if not h.empty]
+        lines.append(f"{market} prices to: {max(dates):%a %d %b}" if dates else f"{market} prices: none")
+    backups = sorted(Path(config.BACKUP_DIR).glob("portograph-*.db"))
+    if backups:
+        b = backups[-1]
+        lines.append(f"Last backup: {b.name} ({b.stat().st_size / 1024:,.0f} KB, {len(backups)} kept)")
+    else:
+        lines.append("Last backup: none yet (the worker makes one daily at 03:15)")
+    return "\n".join(lines)

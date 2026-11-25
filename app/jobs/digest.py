@@ -69,7 +69,8 @@ def run(market: str, notifier, db: DBManager | None = None, provider=None,
         except Exception:
             log.exception("%s: sentiment inputs refresh failed", market)
 
-    snaps = market_snapshots(db, market)
+    # A catch-up digest (sent late) still reports the session it is for
+    snaps = market_snapshots(db, market, until=None if session_date is None else pd.Timestamp(session_date))
     if session_date is not None:
         target = pd.Timestamp(session_date)
         if not any(s.date == target for s in snaps):

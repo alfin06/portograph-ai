@@ -59,6 +59,29 @@ def test_yahoo_provider_survives_download_error():
     assert YahooProvider(downloader=boom).get_history([Instrument("VOO", "US", "ETF", "USD")]) == {}
 
 
+
+def test_yahoo_provider_rebuilds_blank_daily_bar_from_hourly():
+    days = pd.bdate_range("2026-11-19", "2026-11-25")
+    daily = pd.DataFrame({"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.0, "Volume": 1e6}, index=days)
+    daily.loc[days[-1], ["Open", "High", "Low", "Close"]] = float("nan")   # Yahoo's blank IDX row
+    hours = pd.date_range("2026-11-25 09:00", periods=7, freq="h", tz="Asia/Jakarta")
+    hourly = pd.DataFrame({"Open": [100, 101, 102, 103, 104, 105, 106.0],
+                           "High": [101, 102, 103, 104, 105, 106, 107.0],
+                           "Low": [99, 100, 101, 102, 103, 104, 105.0],
+                           "Close": [101, 102, 103, 104, 105, 106, 104.0],
+                           "Volume": [10.0] * 7}, index=hours)
+    calls = []
+
+    def fake_download(tickers, interval, **kw):
+        calls.append(interval)
+        return pd.concat({"BBCA.JK": daily if interval == "1d" else hourly}, axis=1)
+
+    out = YahooProvider(downloader=fake_download).get_history([Instrument("BBCA", "IDX", "STOCK", "IDR")])
+    bar = out["BBCA"].loc["2026-11-25"]
+    assert calls == ["1d", "60m"]
+    assert (bar["Open"], bar["High"], bar["Low"], bar["Close"], bar["Volume"]) == (100, 107, 99, 104, 70)
+
+
 # --- indicators -------------------------------------------------------------
 def test_rsi_is_100_when_price_only_rises():
     df = TechnicalIndicators.add_all_indicators(make_bars(60, step=1.0))

@@ -97,10 +97,14 @@ def fx_change(series: pd.Series) -> tuple[float | None, float | None]:
     return float(series.iloc[-1]), _pct(series, 1)
 
 
-def market_snapshots(db, market: str) -> list[Snapshot]:
+def market_snapshots(db, market: str, until=None) -> list[Snapshot]:
+    """Latest snapshot per instrument; `until` (a Timestamp) ignores bars after that day."""
     snaps = []
     for inst in db.get_instruments(market=market):
-        snap = build_snapshot(inst, db.get_price_history(inst["symbol"], days=TRADING_DAYS_52W + 30))
+        bars = db.get_price_history(inst["symbol"], days=TRADING_DAYS_52W + 60)
+        if until is not None and not bars.empty:
+            bars = bars[bars.index <= until]
+        snap = build_snapshot(inst, bars)
         if snap is not None:
             snaps.append(snap)
     return snaps

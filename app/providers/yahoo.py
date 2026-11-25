@@ -8,6 +8,8 @@ from app.symbols import Instrument, FX_YAHOO
 
 log = logging.getLogger(__name__)
 
+GAP_LOOKBACK_ROWS = 5  # only patch blank closes this recent; older gaps are real holidays
+
 
 class YahooProvider:
     name = "yahoo"
@@ -35,6 +37,7 @@ class YahooProvider:
             return {}
 
         out: dict[str, pd.DataFrame] = {}
+        gaps: dict[str, list] = {}   # ysym -> recent dates whose daily close is blank
         multi = isinstance(raw.columns, pd.MultiIndex)
         for ysym, plain in yahoo_to_plain.items():
             if multi:
@@ -44,10 +47,50 @@ class YahooProvider:
                 df = raw[ysym]
             else:
                 df = raw
+            if "Close" in df.columns:
+                recent = df["Close"].tail(GAP_LOOKBACK_ROWS)
+                blank = [pd.Timestamp(d).tz_localize(None).normalize() if pd.Timestamp(d).tzinfo
+                         else pd.Timestamp(d).normalize() for d in recent.index[recent.isna()]]
+                if blank:
+                    gaps[ysym] = blank
             df = normalize_ohlcv(df)
             if not df.empty:
                 out[plain] = df
+        if gaps:
+            self._fill_from_intraday(out, gaps, yahoo_to_plain)
         return out
+
+    def _fill_from_intraday(self, out: dict, gaps: dict, yahoo_to_plain: dict) -> None:
+        """Yahoo sometimes posts a session's daily bar hours late, blank, for IDX stocks
+        while its hourly bars are already there. Rebuild those days from the hourly bars;
+        the real daily bar overwrites it on a later refresh."""
+        try:
+            raw = self._download(tickers=list(gaps), period="5d", interval="60m",
+                                 group_by="ticker", auto_adjust=True, threads=True, progress=False)
+        except Exception as e:
+            log.warning("Yahoo intraday download failed: %s", e)
+            return
+        if raw is None or raw.empty:
+            return
+        multi = isinstance(raw.columns, pd.MultiIndex)
+        for ysym, dates in gaps.items():
+            if multi and ysym not in raw.columns.get_level_values(0):
+                continue
+            bars = (raw[ysym] if multi else raw).dropna(subset=["Close"])
+            if bars.empty:
+                continue
+            # the index is in the exchange's own time zone, so .date is the local session day
+            day = pd.to_datetime(bars.index.date)
+            daily = bars.groupby(day).agg({"Open": "first", "High": "max", "Low": "min",
+                                           "Close": "last", "Volume": "sum"})
+            daily = daily[daily.index.isin(dates)]
+            if daily.empty:
+                continue
+            plain = yahoo_to_plain[ysym]
+            log.info("%s: daily bar blank on Yahoo for %s, rebuilt from hourly bars", plain,
+                     ", ".join(f"{d:%Y-%m-%d}" for d in daily.index))
+            base = out.get(plain, normalize_ohlcv(None))
+            out[plain] = normalize_ohlcv(pd.concat([base, daily]))
 
     def get_fx(self, pair: str, period: str = "1y") -> pd.Series:
         ysym = FX_YAHOO.get(pair.upper())

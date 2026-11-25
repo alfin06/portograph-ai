@@ -38,7 +38,14 @@ STOP_LOSS_MULTIPLIER = 0.98
 ESTIMATED_FEES = 0.004
 
 # --- Paths (absolute, so scripts work from any working directory) ---
-DB_PATH = str(PROJECT_ROOT / "database" / "portograph.db")
+# Runtime data lives in DATA_DIR. Locally it defaults to database/; in Docker it is a
+# mounted volume (/app/data), so moving to a server means copying one folder plus .env.
+DATA_DIR = Path(_env("DATA_DIR") or PROJECT_ROOT / "database")
+DB_PATH = str(DATA_DIR / "portograph.db")
+BACKUP_DIR = Path(_env("BACKUP_DIR") or DATA_DIR / "backups")
+BACKUP_KEEP = int(_env("BACKUP_KEEP", "14") or 14)          # daily copies to keep
+LOG_DIR = Path(_env("LOG_DIR") or PROJECT_ROOT / "logs")
+CATCHUP_HOURS = float(_env("CATCHUP_HOURS", "20") or 20)    # send a missed digest up to this late
 SCHEMA_PATH = str(PROJECT_ROOT / "database" / "schema.sql")
 RULES_PATH = str(PROJECT_ROOT / "dynamic_rules.json")
 

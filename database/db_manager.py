@@ -10,6 +10,7 @@ class DBManager:
     def __init__(self, db_path: str = DB_PATH, schema_path: str = SCHEMA_PATH):
         self.db_path = db_path
         self.schema_path = schema_path
+        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
         self._initialize_db()
 
     def _get_connection(self):
@@ -311,6 +312,30 @@ class DBManager:
     def clear_alert(self, alert_key: str):
         with self._get_connection() as conn:
             conn.execute("DELETE FROM alert_state WHERE alert_key = ?", (alert_key,))
+
+    # --- scheduled job runs ------------------------------------------------------------
+    def record_job_run(self, job: str, session_date: str, status: str) -> None:
+        from datetime import timezone
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO job_runs (job, session_date, status, ran_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(job, session_date) DO UPDATE SET status=excluded.status, ran_at=excluded.ran_at",
+                (job, session_date, status, datetime.now(timezone.utc).isoformat(timespec="seconds")))
+
+    def get_job_run(self, job: str, session_date: str) -> dict | None:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM job_runs WHERE job = ? AND session_date = ?",
+                               (job, session_date)).fetchone()
+        return dict(row) if row else None
+
+    def get_last_job_runs(self) -> list[dict]:
+        """Latest run per job."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT j.* FROM job_runs j JOIN (SELECT job, MAX(session_date) d FROM job_runs GROUP BY job) m "
+                "ON j.job = m.job AND j.session_date = m.d ORDER BY j.job").fetchall()
+        return [dict(r) for r in rows]
+
 
 # Quick test execution block
 if __name__ == "__main__":

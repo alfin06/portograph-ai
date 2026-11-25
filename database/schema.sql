@@ -134,3 +134,17 @@ CREATE TABLE IF NOT EXISTS etf_profiles (
     source TEXT NOT NULL,
     data TEXT NOT NULL
 );
+
+-- =====================================================================
+-- Scheduled job runs (local hosting)
+-- =====================================================================
+
+-- One row per scheduled digest outcome, so a digest missed while the computer
+-- was off or asleep is sent once on wake-up, and never twice
+CREATE TABLE IF NOT EXISTS job_runs (
+    job TEXT NOT NULL,                      -- e.g. digest_IDX
+    session_date TEXT NOT NULL,             -- YYYY-MM-DD the run was for
+    status TEXT NOT NULL,                   -- sent | no_data | failed
+    ran_at TEXT NOT NULL,                   -- ISO timestamp, UTC
+    PRIMARY KEY (job, session_date)
+);

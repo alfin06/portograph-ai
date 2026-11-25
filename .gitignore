@@ -16,3 +16,8 @@ database/*.db
 database/*.db-wal
 database/*.db-shm
 database/*.db-journal
+
+# Local hosting runtime
+logs/
+database/backups/
+data/

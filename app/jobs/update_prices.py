@@ -34,7 +34,10 @@ def run(period: str = "2y", provider=None, db: DBManager | None = None,
         if df is None or df.empty:
             summary["missing"].append(inst.symbol)
             continue
-        summary["updated"][inst.symbol] = db.upsert_price_bars(inst.symbol, df)
+        # Never store a bar for a session still trading: it'd be an intraday price, not a close
+        df = df[df.index.date <= last_closed_session(inst.market)]
+        if not df.empty:
+            summary["updated"][inst.symbol] = db.upsert_price_bars(inst.symbol, df)
 
     fx = provider.get_fx("USDIDR", period=period)
     summary["fx_rows"] = db.upsert_fx("USDIDR", fx) if not fx.empty else 0

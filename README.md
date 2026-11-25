@@ -13,7 +13,8 @@ Folder structure
   - `app/analytics/`: shared numbers (returns, RSI, 52-week range, signals, screener, sentiment, ETF overlap, currency-adjusted returns) used by the bot, jobs and future web app
   - `app/commands.py`: logic behind the Telegram commands (testable without Telegram)
   - `app/reports/`: message formatting; `app/notify/`: Telegram push
-  - `app/worker.py`: scheduler that sends the daily close digests
+  - `app/worker.py`: scheduler that sends the daily close digests, catches up after sleep, backs up the DB
+  - `app/run.py`: starts and supervises the bot and worker (same entry point on this PC and in Docker)
   - `app/symbols.py`: symbol mapping (BBCA -> BBCA.JK, FX pairs)
 - **agents/**: Critic Agent (to be repurposed for reviewing buy/sell zones)
 - **core/**: config and the Telegram bot ([core/telegram_bot.py](core/telegram_bot.py))
@@ -46,9 +47,26 @@ pip install -r requirements.txt
 python -m pytest                                 # tests
 python -m app.jobs.update_prices                 # fetch 2y of prices for the watchlist + USD/IDR
 python -m app.jobs.update_prices --period 1mo    # daily refresh
-python -m core.telegram_bot                      # Telegram bot (keep running)
-python -m app.worker                             # digest scheduler (keep running)
+python -m app.run                               # bot + digest worker together (keep running)
 ```
+
+Running it on this PC
+- `python -m app.run` starts the Telegram bot and the digest worker as two processes, restarts either if it crashes, and writes `logs/bot.log`, `logs/worker.log`, `logs/run.log`. `--status` shows what's running; `--stop` shuts it down cleanly. It refuses to start a second copy.
+- Start automatically at logon, hidden, no admin needed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1 -StartNow
+```
+
+  Remove with `scripts\windows\uninstall-autostart.ps1`.
+- Sleep and shutdown: digests only go out while the PC is on. After it wakes or boots, the worker sends a digest it missed if it is under 20 hours late (`CATCHUP_HOURS`), and never sends one twice. The US digest is due around 05:00 WIB, so if the PC sleeps overnight it arrives when you wake it.
+- The worker backs up the database every day at 03:15 to `database/backups/` (keeps 14). Make one any time with `python -m app.backup`.
+- `/status` in Telegram shows the last digest per market, the newest stored prices and the last backup.
+
+Moving to a server later
+1. On this PC: `python -m app.backup --out <folder>`, then `scripts\windows\uninstall-autostart.ps1` so two bots don't run at once.
+2. On the server (Linux with Docker): clone the repo, copy `.env` next to `docker-compose.yml`, and copy the backup to `data/portograph.db`.
+3. `docker compose up -d --build`. Same code, same command (`python -m app.run`); the database, backups and logs live in `data/`. Logs: `docker compose logs -f`.
 
 Daily digests
 - The worker sends an **IDX close digest** at 16:30 WIB and a **US close digest** at 17:00 New York time (about 05:00 WIB), Mon-Fri. Change the times with `DIGEST_IDX_TIME` / `DIGEST_US_TIME`.
@@ -84,6 +102,7 @@ Telegram commands
 - `/addscreen cheap_banks idx pb < 1.5 and roe > 12` save · `/delscreen cheap_banks` delete
 - `/sentiment` or `/sentiment idx` fear & greed score with each input
 - `/etf VOO`, `/overlap VOO QQQM`, `/compare BBCA VOO 1y` ETF details, ETF similarity, returns in IDR and USD
+- `/status` is everything running? last digests, newest prices, last backup
 
 Optional crypto module:
 
