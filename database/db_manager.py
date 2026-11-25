@@ -118,6 +118,92 @@ class DBManager:
         with self._get_connection() as conn:
             conn.execute(query, (symbol.upper(), market, asset_type, currency, int(is_holding)))
 
+    def set_instrument_active(self, symbol: str, active: bool) -> bool:
+        with self._get_connection() as conn:
+            cur = conn.execute("UPDATE instruments SET active = ? WHERE symbol = ?",
+                               (int(active), symbol.upper()))
+            return cur.rowcount > 0
+
+    def get_instrument(self, symbol: str) -> dict | None:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM instruments WHERE symbol = ?", (symbol.upper(),)).fetchone()
+        return dict(row) if row else None
+
+    # ------------------------------------------------------------------
+    # Fundamentals
+    # ------------------------------------------------------------------
+    FUNDAMENTAL_FIELDS = ("sector", "industry", "market_cap", "market_cap_usd", "pe", "forward_pe",
+                          "pb", "roe", "roa", "der", "div_yield", "net_margin", "rev_growth",
+                          "eps_growth")
+
+    def upsert_fundamentals(self, symbol: str, as_of: str, source: str, values: dict):
+        cols = ["symbol", "as_of", "source", *self.FUNDAMENTAL_FIELDS]
+        params = [symbol.upper(), as_of, source, *(values.get(f) for f in self.FUNDAMENTAL_FIELDS)]
+        updates = ", ".join(f"{c} = excluded.{c}" for c in cols[2:])
+        query = (f"INSERT INTO fundamentals ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))}) "
+                 f"ON CONFLICT(symbol, as_of) DO UPDATE SET {updates}")
+        with self._get_connection() as conn:
+            conn.execute(query, params)
+
+    def get_latest_fundamentals(self, symbol: str) -> dict | None:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM fundamentals WHERE symbol = ? ORDER BY as_of DESC LIMIT 1",
+                (symbol.upper(),)).fetchone()
+        return dict(row) if row else None
+
+    # ------------------------------------------------------------------
+    # Screens
+    # ------------------------------------------------------------------
+    def get_screens(self, market: str | None = None, active_only: bool = True) -> list[dict]:
+        """market='IDX' returns IDX screens plus the ones that run on every market."""
+        query = "SELECT * FROM screens WHERE 1=1"
+        params: list = []
+        if active_only:
+            query += " AND active = 1"
+        if market:
+            query += " AND (market = ? OR market IS NULL)"
+            params.append(market)
+        with self._get_connection() as conn:
+            return [dict(r) for r in conn.execute(query + " ORDER BY name", params).fetchall()]
+
+    def get_screen(self, name: str) -> dict | None:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM screens WHERE name = ?", (name.lower(),)).fetchone()
+        return dict(row) if row else None
+
+    def save_screen(self, name: str, rule: str, market: str | None = None):
+        query = """
+            INSERT INTO screens (name, rule, market, active) VALUES (?, ?, ?, 1)
+            ON CONFLICT(name) DO UPDATE SET rule = excluded.rule, market = excluded.market, active = 1
+        """
+        with self._get_connection() as conn:
+            conn.execute(query, (name.lower(), rule, market))
+            # A changed rule starts fresh, so every current match is reported as new once
+            conn.execute("DELETE FROM screen_hits WHERE screen = ?", (name.lower(),))
+
+    def delete_screen(self, name: str) -> bool:
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM screen_hits WHERE screen = ?", (name.lower(),))
+            return conn.execute("DELETE FROM screens WHERE name = ?", (name.lower(),)).rowcount > 0
+
+    def record_screen_hits(self, screen: str, symbols_in_scope: list[str], hits: list[str],
+                           today: str) -> list[str]:
+        """Store the current matches for one screen over the symbols it looked at.
+        Returns the symbols that are new matches since the previous run."""
+        with self._get_connection() as conn:
+            known = {r["symbol"] for r in conn.execute(
+                "SELECT symbol FROM screen_hits WHERE screen = ?", (screen,)).fetchall()}
+            for sym in hits:
+                conn.execute("""
+                    INSERT INTO screen_hits (screen, symbol, first_seen, last_seen) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(screen, symbol) DO UPDATE SET last_seen = excluded.last_seen
+                """, (screen, sym, today, today))
+            dropped = [s for s in symbols_in_scope if s in known and s not in hits]
+            conn.executemany("DELETE FROM screen_hits WHERE screen = ? AND symbol = ?",
+                             [(screen, s) for s in dropped])
+        return [s for s in hits if s not in known]
+
     # ------------------------------------------------------------------
     # Price + FX history
     # ------------------------------------------------------------------

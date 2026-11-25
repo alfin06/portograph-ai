@@ -8,9 +8,10 @@ Overview
 
 Folder structure
 - **app/**: multi-market investing core (IDX, US stocks, US ETFs)
-  - `app/providers/`: data sources behind one interface (`yahoo.py` today; more later)
-  - `app/jobs/`: jobs (`update_prices.py`, `digest.py`)
-  - `app/analytics/`: shared numbers (returns, RSI, 52-week range, signals) used by the bot, jobs and future web app
+  - `app/providers/`: data sources behind one interface (`yahoo.py` prices, `yahoo_fundamentals.py` ratios)
+  - `app/jobs/`: jobs (`update_prices.py`, `update_fundamentals.py`, `digest.py`)
+  - `app/analytics/`: shared numbers (returns, RSI, 52-week range, signals, screener) used by the bot, jobs and future web app
+  - `app/commands.py`: logic behind the Telegram commands (testable without Telegram)
   - `app/reports/`: message formatting; `app/notify/`: Telegram push
   - `app/worker.py`: scheduler that sends the daily close digests
   - `app/symbols.py`: symbol mapping (BBCA -> BBCA.JK, FX pairs)
@@ -55,6 +56,28 @@ Daily digests
 - If the closing bar isn't available yet, the worker retries 3 times, 20 minutes apart, then sends a one-line notice (holiday or late feed).
 - Preview without sending: `python -m app.jobs.digest --market IDX --dry-run`. On demand from Telegram: `/digest idx` or `/digest us`.
 - `python -m app.worker --list` shows the next run times.
+
+Fundamentals and screens
+- Ratios come from Yahoo and are refreshed weekly per symbol (the digest fetches any that are older than 7 days, and new symbols right away). Manual refresh: `python -m app.jobs.update_fundamentals --all`.
+- Units: ROE, margins, growth and dividend yield in percent (15 = 15%); `der` is a ratio (0.8 = 0.8x). When a company reports in another currency than it trades in (e.g. ITMG reports in USD), P/B is recomputed with USD/IDR because Yahoo's own value is wrong.
+- A screen is a rule such as `pe < 12 and pb < 2 and roe > 15`. Rules accept comparisons joined by `and` / `or`; a missing value (banks have no D/E) never matches. Fields: `close chg_1d chg_5d chg_1m rsi vol_surge from_52w_high holding pe forward_pe pb roe roa der div_yield net_margin rev_growth eps_growth market_cap_usd_bn`.
+- Every digest lists each screen's matches for that market; symbols that just started matching are marked 🆕. `--dry-run` never consumes the 🆕 markers.
+- Starter screens: `value_idx`, `dividend`, `oversold_quality`. Screens only look at symbols on your watchlist, so add candidates with `/watch`.
+
+Market mood (fear & greed)
+- Every digest opens with a 0-100 mood score for that market (0 = extreme fear, 100 = extreme greed, CNN's bands), last week's value, and the inputs pushing it most. `/sentiment` shows every input.
+- It is our own estimate from free Yahoo data (CNN's index blocks automated access). Each input is ranked against its own past year, flipped where high means fear, then averaged:
+  - US: S&P 500 vs its 125-day average, VIX vs its 50-day average, stocks vs Treasuries (SPY-IEF, 20d), high-yield vs Treasuries (HYG-IEF, 20d)
+  - IDX: IHSG vs its 125-day average, IHSG 20-day volatility, USD/IDR 20-day change, EIDO vs S&P 500 (20d) as a proxy for foreign appetite for Indonesia
+- Per-stock foreign buy/sell is not included: IDX blocks automated access and the API providers that resell it are paid.
+
+Telegram commands
+- `/digest idx|us` latest close digest
+- `/fund BBCA` fundamentals and price snapshot
+- `/watch BBNI idx [etf] [hold]`, `/unwatch BBNI` manage the watchlist (checks Yahoo has data first)
+- `/screens` saved screens and fields · `/screen value_idx` or `/screen roe > 15 and pb < 2` run now
+- `/addscreen cheap_banks idx pb < 1.5 and roe > 12` save · `/delscreen cheap_banks` delete
+- `/sentiment` or `/sentiment idx` fear & greed score with each input
 
 Optional crypto module:
 

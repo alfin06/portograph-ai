@@ -43,7 +43,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"/pending - Trades waiting for execution\n"
         f"/portofolio - View and manage your ACTIVE trades\n"
         f"/reflect - Run Critic Agent analysis\n"
-        f"/digest idx|us - Latest market close digest"
+        f"/digest idx|us - Latest market close digest\n"
+        f"/fund SYM - Fundamentals for a watched symbol\n"
+        f"/watch SYM idx|us [etf] [hold] - Add to watchlist\n"
+        f"/unwatch SYM - Stop tracking\n"
+        f"/screens - Saved screens and rule fields\n"
+        f"/screen NAME|RULE - Run a screen now\n"
+        f"/addscreen NAME [idx|us] RULE - Save a screen\n"
+        f"/delscreen NAME - Delete a screen\n"
+        f"/sentiment [idx|us] - Fear & greed score"
     )
 
 @owner_only
@@ -211,6 +219,23 @@ async def digest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(chunk, parse_mode="HTML")
 
 
+def _text_command(fn, needs_args=True, slow=False):
+    """Wrap an app.commands function (db, args) -> HTML as an owner-only bot handler."""
+    @owner_only
+    async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        from app.notify.telegram import split_message
+        if slow:
+            await update.message.reply_text("⏳ Fetching from Yahoo...")
+        try:
+            call = (lambda: fn(db, context.args or [])) if needs_args else (lambda: fn(db))
+            text = await asyncio.to_thread(call)
+        except Exception as e:
+            text = f"⚠️ {type(e).__name__}: {e}"
+        for chunk in split_message(text):
+            await update.message.reply_text(chunk, parse_mode="HTML")
+    return handler
+
+
 # Updated portfolio function
 @owner_only
 async def portofolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -253,6 +278,16 @@ def main():
     app.add_handler(CommandHandler("portofolio", portofolio))
     app.add_handler(CommandHandler("reflect", reflect))
     app.add_handler(CommandHandler("digest", digest_cmd))
+
+    from app import commands as cmd
+    app.add_handler(CommandHandler("fund", _text_command(cmd.cmd_fund)))
+    app.add_handler(CommandHandler("watch", _text_command(cmd.cmd_watch, slow=True)))
+    app.add_handler(CommandHandler("unwatch", _text_command(cmd.cmd_unwatch)))
+    app.add_handler(CommandHandler("screens", _text_command(cmd.cmd_screens, needs_args=False)))
+    app.add_handler(CommandHandler("screen", _text_command(cmd.cmd_screen)))
+    app.add_handler(CommandHandler("addscreen", _text_command(cmd.cmd_addscreen)))
+    app.add_handler(CommandHandler("delscreen", _text_command(cmd.cmd_delscreen)))
+    app.add_handler(CommandHandler("sentiment", _text_command(cmd.cmd_sentiment, slow=True)))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 PortoGraph AI Telegram Bot is running...")

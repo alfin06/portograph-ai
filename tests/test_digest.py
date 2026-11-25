@@ -29,6 +29,13 @@ class Recorder:
         self.sent.append(text)
 
 
+class NoFundamentals:
+    name = "fake"
+
+    def get_fundamentals(self, instruments, usdidr):
+        return {}
+
+
 class FakeProvider:
     """Returns the same frame for every US instrument; IDX gets nothing."""
     def __init__(self, frame):
@@ -139,17 +146,19 @@ def test_notifier_requires_chat_id(monkeypatch):
 def test_digest_sends_for_available_session(db):
     frame = bars([500.0] * 60 + [510.0])
     provider, rec = FakeProvider(frame), Recorder()
-    res = digest.run("US", rec, db=db, provider=provider, session_date=frame.index[-1].date())
+    res = digest.run("US", rec, db=db, provider=provider, session_date=frame.index[-1].date(),
+                     fund_provider=NoFundamentals())
     assert res.status == "sent" and len(rec.sent) == 1
     assert "VOO" in rec.sent[0] and "QQQM" in rec.sent[0]
-    assert provider.periods == ["2y"]  # empty DB -> full backfill
+    assert provider.periods[0] == "2y"  # empty DB -> full backfill (later calls: sentiment inputs)
     assert len(market_snapshots(db, "US")) == 2
 
 
 def test_digest_skips_when_no_bar_for_session(db):
     frame = bars([500.0] * 30)
     rec = Recorder()
-    res = digest.run("US", rec, db=db, provider=FakeProvider(frame), session_date=date(2030, 1, 1))
+    res = digest.run("US", rec, db=db, provider=FakeProvider(frame), session_date=date(2030, 1, 1),
+                     fund_provider=NoFundamentals())
     assert res.status == "no_session_data" and rec.sent == []
 
 
@@ -158,8 +167,8 @@ def test_digest_uses_short_refresh_once_history_exists(db):
     db.upsert_price_bars("VOO", frame)
     db.upsert_price_bars("QQQM", frame)
     provider = FakeProvider(frame)
-    digest.run("US", Recorder(), db=db, provider=provider)
-    assert provider.periods == ["1mo"]
+    digest.run("US", Recorder(), db=db, provider=provider, fund_provider=NoFundamentals())
+    assert provider.periods[0] == "1mo"
 
 
 def test_market_today_uses_exchange_timezone():

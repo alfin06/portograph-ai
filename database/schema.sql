@@ -78,3 +78,46 @@ INSERT OR IGNORE INTO instruments (symbol, market, asset_type, currency, is_hold
     ('ULTJ', 'IDX', 'STOCK', 'IDR', 1),
     ('VOO',  'US',  'ETF',   'USD', 1),
     ('QQQM', 'US',  'ETF',   'USD', 1);
+
+-- =====================================================================
+-- Fundamentals + screener (Phase 2)
+-- =====================================================================
+
+-- One row per symbol per fetch date. Percent fields are in percent (15 = 15%),
+-- der is a plain ratio (0.8 = 0.8x), market_cap is in the trading currency.
+CREATE TABLE IF NOT EXISTS fundamentals (
+    symbol TEXT NOT NULL,
+    as_of TEXT NOT NULL,                    -- YYYY-MM-DD fetched
+    source TEXT NOT NULL,
+    sector TEXT, industry TEXT,
+    market_cap REAL, market_cap_usd REAL,
+    pe REAL, forward_pe REAL, pb REAL,
+    roe REAL, roa REAL, der REAL, div_yield REAL,
+    net_margin REAL, rev_growth REAL, eps_growth REAL,
+    PRIMARY KEY (symbol, as_of)
+);
+
+-- Saved screens, e.g. "roe > 15 and pb < 2". market NULL = run on both markets.
+CREATE TABLE IF NOT EXISTS screens (
+    name TEXT PRIMARY KEY,
+    rule TEXT NOT NULL,
+    market TEXT CHECK(market IN ('IDX', 'US') OR market IS NULL),
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Symbols currently matching each screen; a symbol that drops out is removed,
+-- so matching again later counts as a new hit
+CREATE TABLE IF NOT EXISTS screen_hits (
+    screen TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    PRIMARY KEY (screen, symbol)
+);
+
+-- Starter screens (edit or delete them from Telegram with /addscreen, /delscreen)
+INSERT OR IGNORE INTO screens (name, rule, market) VALUES
+    ('value_idx', 'pe < 12 and pb < 2 and roe > 15', 'IDX'),
+    ('dividend', 'div_yield > 5 and roe > 12', NULL),
+    ('oversold_quality', 'rsi < 35 and roe > 12', NULL);

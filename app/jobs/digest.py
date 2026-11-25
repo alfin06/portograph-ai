@@ -12,8 +12,10 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from app.analytics import sentiment
+from app.analytics.screener import run_screens
 from app.analytics.snapshot import fx_change, market_snapshots
-from app.jobs import update_prices
+from app.jobs import update_fundamentals, update_prices
 from app.reports.digest import format_digest
 from database.db_manager import DBManager
 
@@ -42,16 +44,30 @@ def _refresh_period(db: DBManager, market: str) -> str:
 
 
 def run(market: str, notifier, db: DBManager | None = None, provider=None,
-        session_date: date | None = None, refresh: bool = True) -> DigestResult:
+        session_date: date | None = None, refresh: bool = True,
+        fund_provider=None, record_hits: bool = True) -> DigestResult:
     """session_date: the trading day the digest is for. When given and no instrument has
     a bar for that day (holiday, or the feed is late), nothing is sent and the caller may
     retry. When None, the digest covers the latest stored session."""
     db = db or DBManager()
     if refresh:
+        if provider is None:
+            from app.providers.yahoo import YahooProvider
+            provider = YahooProvider()
         summary = update_prices.run(period=_refresh_period(db, market), provider=provider,
                                     db=db, market=market)
         if summary["missing"]:
             log.warning("%s: no data for %s", market, ", ".join(summary["missing"]))
+        try:  # weekly-stale or brand-new symbols only; a failure must not block the digest
+            fs = update_fundamentals.run(db=db, provider=fund_provider, market=market)
+            if fs["missing"]:
+                log.warning("%s: no fundamentals for %s", market, ", ".join(fs["missing"]))
+        except Exception:
+            log.exception("%s: fundamentals refresh failed", market)
+        try:
+            sentiment.refresh(db, provider, market)
+        except Exception:
+            log.exception("%s: sentiment inputs refresh failed", market)
 
     snaps = market_snapshots(db, market)
     if session_date is not None:
@@ -62,7 +78,15 @@ def run(market: str, notifier, db: DBManager | None = None, provider=None,
     else:
         target = max((s.date for s in snaps), default=pd.Timestamp(market_today(market)))
 
-    text = format_digest(market, snaps, target, fx=fx_change(db.get_fx_history("USDIDR", days=10)))
+    # record_hits=False (dry runs) leaves 🆕 markers for the next real digest
+    screens = run_screens(db, market, snaps, today=target.date().isoformat(), record=record_hits)
+    try:
+        mood = sentiment.from_db(db, market)
+    except Exception:
+        log.exception("%s: sentiment failed", market)
+        mood = None
+    text = format_digest(market, snaps, target, fx=fx_change(db.get_fx_history("USDIDR", days=10)),
+                         screens=screens, mood=mood)
     notifier.send(text)
     return DigestResult("sent", text)
 
@@ -81,7 +105,7 @@ def main():
     else:
         from app.notify.telegram import TelegramNotifier
         notifier = TelegramNotifier()
-    run(args.market, notifier, refresh=not args.no_refresh)
+    run(args.market, notifier, refresh=not args.no_refresh, record_hits=not args.dry_run)
 
 
 if __name__ == "__main__":
