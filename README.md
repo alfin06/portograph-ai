@@ -10,7 +10,7 @@ Folder structure
 - **app/**: multi-market investing core (IDX, US stocks, US ETFs)
   - `app/providers/`: data sources behind one interface (`yahoo.py` prices, `yahoo_fundamentals.py` ratios)
   - `app/jobs/`: jobs (`update_prices.py`, `update_fundamentals.py`, `digest.py`)
-  - `app/analytics/`: shared numbers (returns, RSI, 52-week range, signals, screener, sentiment, ETF overlap, currency-adjusted returns) used by the bot, jobs and future web app
+  - `app/analytics/`: shared numbers (returns, RSI, 52-week range, signals, screener, sentiment, ETF overlap, currency-adjusted returns, valuation bands, buy zones, position sizing) used by the bot, jobs and future web app
   - `app/commands.py`: logic behind the Telegram commands (testable without Telegram)
   - `app/reports/`: message formatting; `app/notify/`: Telegram push
   - `app/worker.py`: scheduler that sends the daily close digests, catches up after sleep, backs up the DB
@@ -94,6 +94,12 @@ ETFs and currency
 - `/overlap VOO QQQM`: how similar two ETFs are, three ways: daily-return correlation over the last year, sector overlap (whole fund) and top-holdings overlap. Yahoo only lists the top 10 holdings and most issuers block automated holdings downloads, so the holdings figure is a lower bound.
 - `/compare BBCA VOO QQQM 1y`: returns in the asset's own currency, in IDR and in USD, plus how much of a US asset's IDR return came from the rupiah moving. Periods: 1m, 3m, 6m, 1y, 2y, ytd. Prices are dividend-adjusted, and every row uses the same end date and currency move so IDX and US rows compare fairly.
 
+Valuation, buy zones and position size
+- `/value BBCA`: is the stock cheap or expensive versus **its own** last ~5 years? Daily P/E, P/B and dividend yield are rebuilt from unadjusted closes and the book value, earnings and dividends the company had published at the time (figures count from 90 days after a year end, 45 after a quarter end; reporting-currency figures such as ITMG's USD are converted at that day's USD/IDR). Shows today's rank (% of past days lower), the 10th/median/90th percentile, the prices that match the cheap boundary and the typical level, and the ROE trend, with a warning when ROE is falling (cheap because the business is weaker). Bands are cached for 7 days. Stocks only; for ETFs use `/etf`.
+- `/zone BBCA 5500 5950 [note]`: a buy zone. Each digest has a 🎯 section listing stocks that closed inside a zone, or fell through one, and marks 🆕 the first time. `/zones` lists them with the distance from the last close; `/delzone ID` deletes. `/value` suggests a zone from the stock's cheapest quarter.
+- `/capital 150jt` then `/size BBCA 5800 5400 [1%] [10%]`: lots to buy so that hitting the stop loses at most the risk % of capital (default 1%), capped at the max position % (default 10%). IDX rounds to lots of 100 shares; US amounts are converted with USD/IDR, with a fractional-share figure when not even one share fits. `now` uses the last close as the entry. Fees and gaps through the stop are not included.
+- Numbers accept `5500`, `5,500`, `5.500`, `150jt`, `1.5m`, `2b`.
+
 Telegram commands
 - `/digest idx|us` latest close digest
 - `/fund BBCA` fundamentals and price snapshot
@@ -102,6 +108,7 @@ Telegram commands
 - `/addscreen cheap_banks idx pb < 1.5 and roe > 12` save · `/delscreen cheap_banks` delete
 - `/sentiment` or `/sentiment idx` fear & greed score with each input
 - `/etf VOO`, `/overlap VOO QQQM`, `/compare BBCA VOO 1y` ETF details, ETF similarity, returns in IDR and USD
+- `/value BBCA` cheap or expensive vs its own history · `/zone`, `/zones`, `/delzone` buy zones · `/capital`, `/size` position size
 - `/status` is everything running? last digests, newest prices, last backup
 
 Optional crypto module:

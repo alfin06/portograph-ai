@@ -19,6 +19,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.jobs import digest
+from app.notify.telegram import TelegramUnreachable
 from core import config
 
 log = logging.getLogger("worker")
@@ -118,6 +119,12 @@ class Worker:
                 self._busy.add(key)
         try:
             result = digest.run(market, self.notifier, db=self._db, session_date=session_date)
+        except TelegramUnreachable as e:
+            # Can't tell you about it either; leave it unrecorded so catch_up resends it
+            log.warning("%s digest for %s not delivered (%s); catch-up will retry", market, session_date, e)
+            with self._lock:
+                self._busy.discard(key)
+            return
         except Exception as e:
             log.exception("%s digest failed", market)
             self._finish(key, job, "failed")

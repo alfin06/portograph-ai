@@ -42,9 +42,24 @@ def format_mood(mood, with_drivers: bool = True) -> str:
     return line
 
 
+def format_zones(events) -> str:
+    lines = ["<b>🎯 Buy zones</b>"]
+    for e in events:
+        z = e.zone
+        rng = f"{_price(z['low'], z['currency'])}–{_price(z['high'], z['currency'])}"
+        if e.state == "inside":
+            what = f"in zone {rng}"
+        else:
+            what = f"below zone {rng}: fell through, recheck the reason"
+        new = " 🆕" if e.new else ""
+        note = f" · {escape(z['note'])}" if z.get("note") else ""
+        lines.append(f"• <b>{escape(z['symbol'])}</b> {_price(e.close, z['currency'])} {what}{new}{note}")
+    return "\n".join(lines)
+
+
 def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp,
                   fx: tuple[float | None, float | None] = (None, None), screens=None,
-                  mood=None) -> str:
+                  mood=None, zones=None) -> str:
     title = f"<b>{MARKET_TITLE.get(market, market)} · {session_date:%a %d %b %Y}</b>"
     if not snaps:
         return f"{title}\nNo price data for this market. Check the watchlist or the data feed."
@@ -76,6 +91,9 @@ def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp
             f"• <b>{escape(sym)}</b> {escape(sig)}" for sym, sig in signals))
     else:
         parts.append("No signals today.")
+
+    if zones:
+        parts.append(format_zones(zones))
 
     if screens:
         parts.append(format_screens(screens))

@@ -3,6 +3,7 @@
 Plain synchronous HTTPS so scheduled jobs can send without running the bot's async
 event loop. The interactive bot (core/telegram_bot.py) stays a separate process."""
 import logging
+import time
 
 import requests
 
@@ -46,27 +47,52 @@ def _split_lines(para: str, limit: int) -> list[str]:
     return out
 
 
+class TelegramUnreachable(RuntimeError):
+    """Network trouble reaching Telegram (VPN drop, timeout, Telegram 5xx/429) after retries.
+    The worker leaves such a digest unrecorded so its catch-up check sends it later."""
+
+
+RETRY_WAITS = (5, 15, 40)  # seconds between attempts
+
+
 class TelegramNotifier:
-    def __init__(self, token: str | None = None, chat_id: str | None = None, session=None):
+    def __init__(self, token: str | None = None, chat_id: str | None = None, session=None,
+                 sleep=time.sleep):
         self.token = token or config.TELEGRAM_BOT_TOKEN
         self.chat_id = chat_id or config.TELEGRAM_CHAT_ID
         if not self.token or not self.chat_id:
             raise RuntimeError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must both be set in .env")
         self._session = session or requests.Session()
+        self._sleep = sleep
 
     def send(self, text: str, parse_mode: str = "HTML") -> None:
         for chunk in split_message(text):
             payload = {"chat_id": self.chat_id, "text": chunk, "disable_web_page_preview": True}
             if parse_mode:
                 payload["parse_mode"] = parse_mode
+            self._post(payload)
+
+    def _post(self, payload: dict) -> None:
+        problem = ""
+        for attempt, wait in enumerate((0, *RETRY_WAITS)):
+            if wait:
+                log.warning("Telegram send failed (%s), retrying in %ss", problem, wait)
+                self._sleep(wait)
             try:
-                resp = self._session.post(API_URL.format(token=self.token), json=payload, timeout=20)
+                resp = self._session.post(API_URL.format(token=self.token), json=payload, timeout=30)
             except requests.RequestException as e:
                 # requests puts the full URL (with the token) in its messages; drop it
-                raise RuntimeError(f"Telegram unreachable: {type(e).__name__}") from None
-            if resp.status_code != 200:
-                # Never log the URL: it contains the bot token
-                raise RuntimeError(f"Telegram send failed ({resp.status_code}): {resp.text[:200]}")
+                problem = type(e).__name__
+                continue
+            if resp.status_code == 200:
+                return
+            if resp.status_code == 429 or resp.status_code >= 500:   # rate limit / Telegram down
+                problem = f"HTTP {resp.status_code}"
+                continue
+            # A real rejection (bad HTML, wrong chat id): retrying won't help.
+            # Never log the URL: it contains the bot token
+            raise RuntimeError(f"Telegram send failed ({resp.status_code}): {resp.text[:200]}")
+        raise TelegramUnreachable(f"Telegram unreachable after {len(RETRY_WAITS) + 1} tries: {problem}")
 
 
 class ConsoleNotifier:

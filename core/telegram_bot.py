@@ -4,7 +4,11 @@ import asyncio
 import json
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest, NetworkError, TimedOut
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+import logging
+
+log = logging.getLogger("bot")
 
 from database.db_manager import DBManager
 from agents.critic_agent import CriticAgent
@@ -55,6 +59,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"/etf SYM - ETF fees, holdings, sectors\n"
         f"/overlap ETF1 ETF2 - How similar two ETFs are\n"
         f"/compare SYM SYM [1m|3m|6m|1y|2y|ytd] - Returns in IDR and USD\n"
+        f"/value SYM - Cheap or expensive vs its own 5 years\n"
+        f"/zone SYM LOW HIGH [note] - Buy-zone alert in the digest\n"
+        f"/zones, /delzone ID - List or delete zones\n"
+        f"/capital AMOUNT - Your capital for sizing (e.g. 150jt)\n"
+        f"/size SYM ENTRY STOP [RISK%] [MAX%] - How many lots\n"
         f"/status - Last digests, latest prices, backups"
     )
 
@@ -209,18 +218,45 @@ async def digest_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     market = (context.args[0].upper() if context.args else "IDX")
     if market not in ("IDX", "US"):
-        await update.message.reply_text("Usage: /digest idx  or  /digest us")
+        await _reply(update, "Usage: /digest idx  or  /digest us")
         return
-    await update.message.reply_text(f"⏳ Building {market} digest...")
+    await _notice(update, f"⏳ Building {market} digest...")
     collector = _Collector()
     try:
         await asyncio.to_thread(digest.run, market, collector, db)
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Digest failed: {type(e).__name__}: {e}")
+        await _reply(update, f"⚠️ Digest failed: {type(e).__name__}: {e}")
         return
     for text in collector.messages:
         for chunk in split_message(text):
-            await update.message.reply_text(chunk, parse_mode="HTML")
+            await _reply(update, chunk, parse_mode="HTML")
+
+
+REPLY_WAITS = (2, 5, 10)  # seconds between attempts when Telegram times out
+
+
+async def _reply(update: Update, text: str, **kw):
+    """reply_text that survives short network drops (VPN hiccups, Telegram timeouts).
+    A rejected message (BadRequest, e.g. broken HTML) is raised at once."""
+    for wait in (0, *REPLY_WAITS):
+        if wait:
+            await asyncio.sleep(wait)
+        try:
+            return await update.message.reply_text(text, **kw)
+        except BadRequest:
+            raise
+        except (TimedOut, NetworkError) as e:
+            last = e
+            log.warning("Telegram reply failed (%s), retrying", type(e).__name__)
+    raise last
+
+
+async def _notice(update: Update, text: str):
+    """A progress note like '⏳ Fetching...': nice to have, never worth failing over."""
+    try:
+        await update.message.reply_text(text)
+    except (TimedOut, NetworkError):
+        log.warning("Progress notice not delivered; continuing")
 
 
 def _text_command(fn, needs_args=True, slow=False):
@@ -229,15 +265,24 @@ def _text_command(fn, needs_args=True, slow=False):
     async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from app.notify.telegram import split_message
         if slow:
-            await update.message.reply_text("⏳ Fetching from Yahoo...")
+            await _notice(update, "⏳ Fetching from Yahoo...")
         try:
             call = (lambda: fn(db, context.args or [])) if needs_args else (lambda: fn(db))
             text = await asyncio.to_thread(call)
         except Exception as e:
             text = f"⚠️ {type(e).__name__}: {e}"
         for chunk in split_message(text):
-            await update.message.reply_text(chunk, parse_mode="HTML")
+            await _reply(update, chunk, parse_mode="HTML")
     return handler
+
+
+async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """One line per error instead of a full traceback for routine network drops."""
+    err = context.error
+    if isinstance(err, (TimedOut, NetworkError)) and not isinstance(err, BadRequest):
+        log.warning("Telegram network error: %s", type(err).__name__)
+    else:
+        log.error("Unhandled error in bot handler", exc_info=err)
 
 
 # Updated portfolio function
@@ -274,7 +319,14 @@ def main():
         print("Error: TELEGRAM_BOT_TOKEN not found in .env file.")
         return
         
-    app = Application.builder().token(TOKEN).build()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll otherwise
+    # Generous timeouts: the link to Telegram (through a VPN) can be slow for a few seconds
+    app = (Application.builder().token(TOKEN)
+           .connect_timeout(20).read_timeout(30).write_timeout(30).pool_timeout(30)
+           .get_updates_connect_timeout(20).get_updates_read_timeout(40)
+           .build())
+    app.add_error_handler(_on_error)
     
     # Register handlers
     app.add_handler(CommandHandler("start", start))
@@ -296,6 +348,12 @@ def main():
     app.add_handler(CommandHandler("overlap", _text_command(cmd.cmd_overlap, slow=True)))
     app.add_handler(CommandHandler("compare", _text_command(cmd.cmd_compare, slow=True)))
     app.add_handler(CommandHandler("status", _text_command(cmd.cmd_status, needs_args=False)))
+    app.add_handler(CommandHandler("value", _text_command(cmd.cmd_value, slow=True)))
+    app.add_handler(CommandHandler("zone", _text_command(cmd.cmd_zone)))
+    app.add_handler(CommandHandler("zones", _text_command(cmd.cmd_zones, needs_args=False)))
+    app.add_handler(CommandHandler("delzone", _text_command(cmd.cmd_delzone)))
+    app.add_handler(CommandHandler("capital", _text_command(cmd.cmd_capital)))
+    app.add_handler(CommandHandler("size", _text_command(cmd.cmd_size)))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 PortoGraph AI Telegram Bot is running...")

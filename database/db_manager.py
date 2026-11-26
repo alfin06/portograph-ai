@@ -337,6 +337,63 @@ class DBManager:
         return [dict(r) for r in rows]
 
 
+    # --- valuation bands -------------------------------------------------------------
+    def upsert_valuation_bands(self, symbol: str, as_of: str, source: str, data: dict) -> None:
+        import json
+        with self._get_connection() as conn:
+            conn.execute("INSERT INTO valuation_bands (symbol, as_of, source, data) VALUES (?, ?, ?, ?) "
+                         "ON CONFLICT(symbol) DO UPDATE SET as_of=excluded.as_of, source=excluded.source, "
+                         "data=excluded.data", (symbol.upper(), as_of, source, json.dumps(data)))
+
+    def get_valuation_bands(self, symbol: str) -> dict | None:
+        import json
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT as_of, data FROM valuation_bands WHERE symbol = ?",
+                               (symbol.upper(),)).fetchone()
+        return None if row is None else {**json.loads(row["data"]), "as_of": row["as_of"]}
+
+    # --- buy zones ---------------------------------------------------------------------
+    def add_zone(self, symbol: str, low: float, high: float, note: str | None, created: str) -> int:
+        with self._get_connection() as conn:
+            cur = conn.execute("INSERT INTO price_zones (symbol, low, high, note, created) VALUES (?, ?, ?, ?, ?)",
+                               (symbol.upper(), low, high, note, created))
+            return cur.lastrowid
+
+    def get_zones(self, symbol: str | None = None, market: str | None = None) -> list[dict]:
+        q = ("SELECT z.*, i.market, i.currency FROM price_zones z "
+             "JOIN instruments i ON i.symbol = z.symbol WHERE 1=1")
+        params = []
+        if symbol:
+            q += " AND z.symbol = ?"
+            params.append(symbol.upper())
+        if market:
+            q += " AND i.market = ?"
+            params.append(market)
+        with self._get_connection() as conn:
+            rows = conn.execute(q + " ORDER BY z.symbol, z.low", params).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_zone(self, zone_id: int) -> bool:
+        with self._get_connection() as conn:
+            return conn.execute("DELETE FROM price_zones WHERE id = ?", (zone_id,)).rowcount > 0
+
+    def set_zone_state(self, zone_id: int, state: str, state_date: str) -> None:
+        with self._get_connection() as conn:
+            conn.execute("UPDATE price_zones SET state = ?, state_date = ? WHERE id = ?",
+                         (state, state_date, zone_id))
+
+    # --- settings ----------------------------------------------------------------------
+    def set_setting(self, key: str, value) -> None:
+        with self._get_connection() as conn:
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
+
+    def get_setting(self, key: str, default=None):
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return default if row is None else row["value"]
+
+
 # Quick test execution block
 if __name__ == "__main__":
     db = DBManager()

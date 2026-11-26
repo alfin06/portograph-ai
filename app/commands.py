@@ -419,3 +419,241 @@ def cmd_status(db, args: list[str] | None = None, now=None) -> str:
     else:
         lines.append("Last backup: none yet (the worker makes one daily at 03:15)")
     return "\n".join(lines)
+
+
+# --- valuation bands -----------------------------------------------------------------
+def _watched(db, raw: str):
+    inst = db.get_instrument(raw)
+    if inst is None or not inst["active"]:
+        return None, (f"{escape(raw.upper())} isn't on your watchlist. "
+                      f"Add it first: /watch {escape(raw.upper())} idx|us")
+    return Instrument(inst["symbol"], inst["market"], inst["asset_type"], inst["currency"]), None
+
+
+def _latest_close(db, inst, provider=None, now=None):
+    try:
+        top_up(db, [inst], provider, now)
+    except Exception:
+        pass  # stored prices are still usable
+    hist = db.get_price_history(inst.symbol, days=10)
+    return (None, None) if hist.empty else (float(hist["Close"].iloc[-1]), hist.index[-1])
+
+
+def cmd_value(db, args: list[str], provider=None, val_provider=None, now=None) -> str:
+    from app.analytics import valuation as val
+
+    if len(args) != 1:
+        return "Usage: /value SYMBOL   e.g. /value BBCA (stocks on your watchlist)"
+    inst, err = _watched(db, args[0])
+    if err:
+        return err
+    if inst.asset_type == "ETF":
+        return f"{escape(inst.symbol)} is an ETF: valuation bands are for single stocks. Try /etf {escape(inst.symbol)}"
+    close, when = _latest_close(db, inst, provider, now)
+    if close is None:
+        return f"{escape(inst.symbol)}: no prices stored yet."
+    profile = val.get_profile(db, inst, provider=val_provider)
+    if profile is None:
+        return f"❌ Not enough history on Yahoo to build valuation bands for {escape(inst.symbol)}."
+    readings = val.assess(profile, close)
+    if not readings:
+        return f"{escape(inst.symbol)}: no usable P/E, P/B or dividend history (losses and no dividends?)."
+
+    ccy = inst.currency
+    lines = [f"<b>{escape(inst.symbol)}</b> · valuation vs its own last {profile['years']:.1f} years",
+             f"Close {_price(close, ccy)} {ccy} ({when:%d %b})"]
+    rows = [f"{'':6}{'Now':>7}{'Rank':>6}  {'Low–Typical–High'}"]
+    for r in readings:
+        unit = "%" if r.metric == "yield" else "x"
+        d = 2 if r.metric == "pb" else 1
+        rows.append(f"{val.LABEL[r.metric]:<6}{r.value:>6.{d}f}{unit}{r.rank:>5.0f}%  "
+                    f"{r.low:.{d}f}–{r.typical:.{d}f}–{r.high:.{d}f}{unit}")
+    lines.append("<pre>" + escape("\n".join(rows)) + "</pre>")
+    lines.append("<i>Rank: % of past trading days with a lower value. Low/High = 10th/90th percentile.</i>")
+    for r in readings:
+        lines.append(f"• {val.LABEL[r.metric]}: {r.label}")
+
+    lines.append("\n<b>Prices that match its usual levels</b>")
+    for r in readings:
+        cheap_name = "75th pct yield" if r.metric == "yield" else "25th pct"
+        lines.append(f"• {val.LABEL[r.metric]}: cheap side below {_price(r.price_cheap, ccy)} ({cheap_name}) · "
+                     f"typical {_price(r.price_typical, ccy)}")
+
+    if profile.get("roe"):
+        lines.append("\nROE: " + " · ".join(f"{x['period']} {x['roe']:.1f}%" for x in profile["roe"][-5:]))
+    warn = val.roe_warning(profile.get("roe", []))
+    if warn:
+        lines.append(f"⚠️ {escape(warn)}")
+
+    cheap = [r for r in readings if r.cheap_side == "cheap"]
+    pricey = [r for r in readings if r.cheap_side == "expensive"]
+    lines.append(f"\nRead: {len(cheap)} of {len(readings)} measures on the cheap side, "
+                 f"{len(pricey)} on the expensive side.")
+    r = readings[0]
+    if close > r.price_cheap:
+        fmt = ".0f" if ccy == "IDR" else ".2f"
+        lines.append(f"Alert me in its cheapest quarter by {val.LABEL[r.metric]}: "
+                     f"/zone {escape(inst.symbol)} {r.price_deep:{fmt}} {r.price_cheap:{fmt}}")
+    else:
+        lines.append(f"It is already below the cheap boundary by {val.LABEL[r.metric]} "
+                     f"({_price(r.price_cheap, ccy)}).")
+    lines.append("<i>Bands only cover these years and assume the business is comparable. Cyclicals "
+                 "(miners) look cheapest on P/E at peak earnings. Research only, not investment advice.</i>")
+    return "\n".join(lines)
+
+
+# --- numbers typed in Telegram ---------------------------------------------------------
+_SUFFIX = {"rb": 1e3, "k": 1e3, "jt": 1e6, "juta": 1e6, "m": 1e6, "mio": 1e6,
+           "b": 1e9, "bn": 1e9, "miliar": 1e9, "t": 1e12, "triliun": 1e12}
+_THOUSANDS = re.compile(r"^\d{1,3}([.,]\d{3})+$")
+
+
+def parse_number(text: str) -> float | None:
+    """'5500', '5,500', '5.500' (IDR style), '5500.5', '150jt', '1.5m', '2b' -> float."""
+    s = text.strip().lower().replace("rp", "").replace("_", "")
+    m = re.fullmatch(r"([\d.,]+)\s*([a-z]*)", s)
+    if not m:
+        return None
+    num, suf = m.groups()
+    if suf and suf not in _SUFFIX:
+        return None
+    if _THOUSANDS.match(num) and not suf:
+        num = re.sub(r"[.,]", "", num)
+    else:
+        num = num.replace(",", "") if num.count(",") and num.count(".") else num.replace(",", ".")
+    try:
+        v = float(num)
+    except ValueError:
+        return None
+    return v * _SUFFIX.get(suf, 1)
+
+
+# --- buy zones -------------------------------------------------------------------------
+def cmd_zone(db, args: list[str], provider=None, now=None) -> str:
+    from datetime import datetime
+
+    from app.analytics.zones import distance_pct, state_of
+
+    usage = ("Usage: /zone SYMBOL LOW HIGH [note]\nExample: /zone BBCA 5500 5950 P/B cheap quarter\n"
+             "You'll get a line in the daily digest when it closes inside (or below) the zone.")
+    if len(args) < 3:
+        return usage
+    inst, err = _watched(db, args[0])
+    if err:
+        return err
+    low, high = parse_number(args[1]), parse_number(args[2])
+    if low is None or high is None or low <= 0 or high <= 0:
+        return usage
+    low, high = min(low, high), max(low, high)
+    note = " ".join(args[3:])[:80] or None
+    zid = db.add_zone(inst.symbol, low, high, note, datetime.now().strftime("%Y-%m-%d"))
+    ccy = inst.currency
+    msg = f"✅ Zone #{zid}: {escape(inst.symbol)} {_price(low, ccy)}–{_price(high, ccy)} {ccy}"
+    close, _ = _latest_close(db, inst, provider, now)
+    if close is not None:
+        st = state_of(close, low, high)
+        where = {"inside": "is inside it now", "below": "is already below it"}.get(
+            st, f"needs to fall {abs(distance_pct(close, low, high)):.1f}% to reach it")
+        msg += f"\nLast close {_price(close, ccy)} {where}."
+    return msg
+
+
+def cmd_zones(db, args: list[str] | None = None) -> str:
+    from app.analytics.zones import distance_pct, state_of
+
+    zs = db.get_zones()
+    if not zs:
+        return "No buy zones yet. Add one: /zone BBCA 5500 5950   (see /value BBCA for levels)"
+    lines = ["<b>Buy zones</b>"]
+    for z in zs:
+        hist = db.get_price_history(z["symbol"], days=10)
+        ccy = z["currency"]
+        where = ""
+        if not hist.empty:
+            close = float(hist["Close"].iloc[-1])
+            st = state_of(close, z["low"], z["high"])
+            where = (f" · now {_price(close, ccy)}, "
+                     + ({"inside": "inside", "below": "below"}.get(st)
+                        or f"{abs(distance_pct(close, z['low'], z['high'])):.1f}% above"))
+        note = f" · {escape(z['note'])}" if z.get("note") else ""
+        lines.append(f"#{z['id']} <b>{escape(z['symbol'])}</b> {_price(z['low'], ccy)}–{_price(z['high'], ccy)}"
+                     f"{where}{note}")
+    lines.append("Delete one: /delzone ID")
+    return "\n".join(lines)
+
+
+def cmd_delzone(db, args: list[str]) -> str:
+    if len(args) != 1 or not args[0].lstrip("#").isdigit():
+        return "Usage: /delzone ID   (IDs are listed by /zones)"
+    zid = int(args[0].lstrip("#"))
+    return f"🗑 Zone #{zid} deleted." if db.delete_zone(zid) else f"No zone #{zid}. See /zones."
+
+
+# --- position sizing -------------------------------------------------------------------
+def cmd_capital(db, args: list[str]) -> str:
+    if not args:
+        cap = db.get_setting("capital_idr")
+        if cap is None:
+            return "No capital set. Set it: /capital 150jt   (your total investable amount, in IDR)"
+        return f"Capital for /size: {_idr_short(float(cap))}. Change it: /capital 200jt"
+    v = parse_number(args[0])
+    if v is None or v <= 0:
+        return "Usage: /capital AMOUNT   e.g. /capital 150jt, /capital 1.5m, /capital 150000000"
+    db.set_setting("capital_idr", v)
+    return f"✅ Capital set to {_idr_short(v)} (Rp {v:,.0f}). /size uses this."
+
+
+def cmd_size(db, args: list[str], provider=None, now=None) -> str:
+    from app.analytics.sizing import DEFAULT_MAX_POSITION_PCT, DEFAULT_RISK_PCT, size_position
+
+    usage = ("Usage: /size SYMBOL ENTRY STOP [RISK%] [MAX%]\n"
+             "Example: /size BBCA 5800 5400 1%   (ENTRY can be 'now')\n"
+             f"RISK% = capital you accept losing if the stop is hit (default {DEFAULT_RISK_PCT:g}%); "
+             f"MAX% = largest position allowed (default {DEFAULT_MAX_POSITION_PCT:g}%).")
+    if len(args) < 3:
+        return usage
+    cap = db.get_setting("capital_idr")
+    if cap is None:
+        return "Set your capital first: /capital 150jt"
+    inst, err = _watched(db, args[0])
+    if err:
+        return err
+    if args[1].lower() == "now":
+        entry, _ = _latest_close(db, inst, provider, now)
+    else:
+        entry = parse_number(args[1])
+    stop = parse_number(args[2])
+    pcts = [parse_number(a.rstrip("%")) for a in args[3:5]]
+    if entry is None or stop is None or any(p is None for p in pcts):
+        return usage
+    risk = pcts[0] if len(pcts) > 0 else DEFAULT_RISK_PCT
+    max_pos = pcts[1] if len(pcts) > 1 else DEFAULT_MAX_POSITION_PCT
+    try:
+        s = size_position(float(cap), entry, stop, inst.market, inst.currency,
+                          usdidr=db.get_latest_fx("USDIDR"), risk_pct=risk, max_position_pct=max_pos)
+    except ValueError as e:
+        return f"❌ {escape(str(e))}\n\n{usage}"
+
+    ccy, sym = inst.currency, escape(inst.symbol)
+    lines = [f"<b>{sym}</b> position size · capital {_idr_short(float(cap))}",
+             f"Entry {_price(entry, ccy)} · stop {_price(stop, ccy)} ({s.stop_distance_pct:.1f}% below) · "
+             f"risk {risk:g}% = {_idr_short(s.risk_budget_idr)}"]
+    if s.shares == 0:
+        lines.append(f"\n❌ Not even one {'lot' if s.lot > 1 else 'share'} fits: one "
+                     f"{'lot' if s.lot > 1 else 'share'} would lose {_idr_short(s.one_lot_risk_idr)} at the stop. "
+                     "Use a closer stop, a higher risk %, or skip this one.")
+        if s.lot == 1 and s.fractional > 0:
+            lines.append(f"If your broker allows fractional shares: {s.fractional:.2f} shares "
+                         f"({_idr_short(s.fractional * entry * s.position_idr_per_unit)}).")
+        return "\n".join(lines)
+    qty = f"{s.shares // s.lot:,} lots ({s.shares:,} shares)" if s.lot > 1 else f"{s.shares:,} shares"
+    lines += [
+        f"\nBuy <b>{qty}</b>",
+        f"Position {_price(s.position, ccy)} {ccy} = {_idr_short(s.position_idr)} · {s.weight_pct:.1f}% of capital",
+        f"If the stop is hit: −{_idr_short(s.loss_at_stop_idr)} ({s.loss_pct:.2f}% of capital)",
+    ]
+    if s.capped:
+        lines.append(f"ℹ️ Capped by the {max_pos:g}% max position; risk alone would allow more.")
+    lines.append("<i>Fees not included (IDX ~0.15% buy, ~0.25% sell). A stop only limits losses if you "
+                 "actually sell there; gaps can go through it. Research only, not investment advice.</i>")
+    return "\n".join(lines)

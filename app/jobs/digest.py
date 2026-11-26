@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.analytics import sentiment
+from app.analytics import sentiment, zones
 from app.analytics.screener import run_screens
 from app.analytics.snapshot import fx_change, market_snapshots
 from app.jobs import update_fundamentals, update_prices
@@ -86,8 +86,13 @@ def run(market: str, notifier, db: DBManager | None = None, provider=None,
     except Exception:
         log.exception("%s: sentiment failed", market)
         mood = None
+    try:
+        zone_events = zones.check(db, market, snaps, target, record=record_hits)
+    except Exception:
+        log.exception("%s: buy-zone check failed", market)
+        zone_events = []
     text = format_digest(market, snaps, target, fx=fx_change(db.get_fx_history("USDIDR", days=10)),
-                         screens=screens, mood=mood)
+                         screens=screens, mood=mood, zones=zone_events)
     notifier.send(text)
     return DigestResult("sent", text)
 

@@ -6,7 +6,7 @@ import pytest
 
 from app.analytics.snapshot import build_snapshot, market_snapshots
 from app.jobs import digest
-from app.notify.telegram import TelegramNotifier, split_message
+from app.notify.telegram import TelegramNotifier, TelegramUnreachable, split_message
 from app.reports.digest import format_digest
 from app.worker import Worker, MAX_RETRIES
 
@@ -131,9 +131,47 @@ def test_notifier_posts_and_hides_token_on_error():
     assert ok.calls == [{"chat_id": "42", "text": "hi", "disable_web_page_preview": True,
                          "parse_mode": "HTML"}]
 
+    waits = []
+    with pytest.raises(TelegramUnreachable) as e:
+        TelegramNotifier("SECRET", "42", session=Session(fail=True), sleep=waits.append).send("hi")
+    assert "SECRET" not in str(e.value) and waits == [5, 15, 40]
+
+
+def test_notifier_retries_blips_but_not_rejections():
+    import requests
+
+    class Flaky:
+        def __init__(self, script):
+            self.script, self.calls = list(script), 0
+
+        def post(self, url, json, timeout):
+            self.calls += 1
+            step = self.script.pop(0)
+            if step == "drop":
+                raise requests.ReadTimeout("timed out")
+            return type("R", (), {"status_code": step, "text": "Bad Request: can't parse entities"})()
+
+    s = Flaky(["drop", 502, 200])
+    TelegramNotifier("T", "42", session=s, sleep=lambda _: None).send("hi")
+    assert s.calls == 3
+    s = Flaky([400])
     with pytest.raises(RuntimeError) as e:
-        TelegramNotifier("SECRET", "42", session=Session(fail=True)).send("hi")
-    assert "SECRET" not in str(e.value)
+        TelegramNotifier("T", "42", session=s, sleep=lambda _: None).send("hi")
+    assert s.calls == 1 and not isinstance(e.value, TelegramUnreachable)
+
+
+def test_worker_leaves_undelivered_digest_for_catch_up(monkeypatch, db):
+    rec = Recorder()
+    w = Worker(scheduler=FakeScheduler(), notifier=rec, db=db)
+
+    def offline(*a, **k):
+        raise TelegramUnreachable("VPN down")
+    monkeypatch.setattr(digest, "run", offline)
+    w.run_digest("IDX", date(2026, 11, 25))
+    assert db.get_job_run("digest_IDX", "2026-11-25") is None and rec.sent == []
+    monkeypatch.setattr(digest, "run", lambda *a, **k: digest.DigestResult("sent"))
+    w.run_digest("IDX", date(2026, 11, 25))                     # the next catch-up delivers it
+    assert db.get_job_run("digest_IDX", "2026-11-25")["status"] == "sent"
 
 
 def test_notifier_requires_chat_id(monkeypatch):

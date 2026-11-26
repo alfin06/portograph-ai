@@ -148,3 +148,35 @@ CREATE TABLE IF NOT EXISTS job_runs (
     ran_at TEXT NOT NULL,                   -- ISO timestamp, UTC
     PRIMARY KEY (job, session_date)
 );
+
+-- =====================================================================
+-- Valuation, buy zones and sizing
+-- =====================================================================
+
+-- Per stock: P/E, P/B and dividend-yield distributions over the last ~5 years
+-- (from unadjusted prices and reported book value / earnings), as JSON
+CREATE TABLE IF NOT EXISTS valuation_bands (
+    symbol TEXT PRIMARY KEY,
+    as_of TEXT NOT NULL,                    -- YYYY-MM-DD computed
+    source TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+
+-- Price ranges you'd consider buying in; the digest tells you when a close enters one.
+-- state is where the last close was: above | inside | below (NULL = not checked yet)
+CREATE TABLE IF NOT EXISTS price_zones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    low REAL NOT NULL,
+    high REAL NOT NULL,
+    note TEXT,
+    created TEXT NOT NULL,
+    state TEXT,
+    state_date TEXT
+);
+
+-- Small key/value settings changed from Telegram (e.g. capital for /size)
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
