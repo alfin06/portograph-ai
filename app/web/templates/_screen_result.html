@@ -1,0 +1,17 @@
+{% if error %}
+<p class="warnbox">{{ error }}</p>
+{% else %}
+<p><code>{{ rule }}</code>: <b>{{ hits|length }}</b> of {{ total }} watched symbols match.</p>
+{% if hits %}
+<div class="table-wrap">
+<table class="data">
+  <thead><tr><th>Symbol</th>{% for f in fields %}<th class="r">{{ f }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for sym, m in hits %}
+  <tr><td><a href="/stock/{{ sym }}">{{ sym }}</a></td>{% for f in fields %}<td class="r">{{ m[f]|num }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endif %}

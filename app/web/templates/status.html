@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Status · PortoGraph{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Status</h1></div>
+<div class="grid">
+  <div class="card">
+    <h3>Processes</h3>
+    {% if processes %}
+    <ul class="plain">{% for p in processes %}<li>{{ p }}</li>{% endfor %}</ul>
+    {% else %}<p class="muted">The supervisor (python -m app.run) isn't running; this page was started on its own.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h3>Daily digests</h3>
+    <ul class="plain">
+    {% for d in digests %}
+      <li><b>{{ d.market }}</b>:
+        {% if d.run %}{{ d.run.status }} for {{ d.run.session_date }} <span class="muted">({{ d.hours_ago|num(0) }}h ago)</span>
+        {% else %}<span class="muted">no scheduled run recorded yet</span>{% endif %}</li>
+    {% endfor %}
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Stored prices</h3>
+    <ul class="plain">
+    {% for p in prices %}<li><b>{{ p.market }}</b> to {{ p.to|date }}</li>{% endfor %}
+    </ul>
+    <p class="small muted">Only finished sessions are stored: today's prices appear after the close.</p>
+  </div>
+  <div class="card">
+    <h3>Backup</h3>
+    {% if backup %}<p>{{ backup.name }} <span class="muted">({{ backup.kb|num(0) }} KB, {{ backup.count }} kept)</span></p>
+    {% else %}<p class="muted">None yet (the worker makes one daily at 03:15).</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

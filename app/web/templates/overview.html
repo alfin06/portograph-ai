@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import mood_bar, zone_state %}
+{% block title %}Overview · PortoGraph{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Overview</h1>
+  {% if usdidr %}
+  <p class="fx">USD/IDR <b>{{ usdidr.rate|price }}</b>
+    {% if usdidr.chg is not none %}<span class="{{ usdidr.chg|tone }}">{{ usdidr.chg|pct(2) }}</span>{% endif %}
+    <span class="muted">{{ usdidr.date|date('%d %b') }}</span></p>
+  {% endif %}
+</div>
+
+{% for m in markets %}
+<section class="market">
+  <h2>{{ 'Indonesia (IDX)' if m.market == 'IDX' else 'United States' }}
+    {% if m.as_of %}<span class="muted small">closes to {{ m.as_of|date }}</span>{% endif %}</h2>
+  <div class="grid">
+    <div class="card wide">
+      {% if m.snaps %}
+      <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Symbol</th><th class="r">Close</th><th class="r">1D</th><th class="r">5D</th><th class="r">1M</th>
+          <th class="r">RSI</th><th class="r">From 52w high</th><th>Signals</th></tr></thead>
+        <tbody>
+        {% for s in m.snaps %}
+        <tr>
+          <td><a href="/stock/{{ s.symbol }}">{{ s.symbol }}</a>{% if s.is_holding %} <span class="pill" title="holding">held</span>{% endif %}
+            {% if s.date != m.as_of %}<span class="muted" title="no bar for the latest session">†</span>{% endif %}</td>
+          <td class="r">{{ s.close|price(s.currency) }}</td>
+          <td class="r {{ s.chg_1d|tone }}">{{ s.chg_1d|pct }}</td>
+          <td class="r {{ s.chg_5d|tone }}">{{ s.chg_5d|pct }}</td>
+          <td class="r {{ s.chg_1m|tone }}">{{ s.chg_1m|pct }}</td>
+          <td class="r">{{ s.rsi|num(0) }}</td>
+          <td class="r">{% if s.high_52w %}{{ ((s.close / s.high_52w - 1) * 100)|pct }}{% else %}–{% endif %}</td>
+          <td class="small">{{ s.signals|join(', ') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="muted">Nothing on the {{ m.market }} watchlist yet. Add with <code>/watch SYMBOL {{ m.market|lower }}</code> in Telegram.</p>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>Market mood</h3>
+      {{ mood_bar(m.mood) }}
+    </div>
+    <div class="card">
+      <h3>Buy zones hit</h3>
+      {% if m.zones %}
+      <ul class="plain">
+        {% for z in m.zones %}
+        <li><a href="/stock/{{ z.symbol }}">{{ z.symbol }}</a> {{ z.close|price(z.currency) }}
+          in {{ z.low|price(z.currency) }}–{{ z.high|price(z.currency) }} {{ zone_state(z) }}
+          {% if z.note %}<div class="muted small">{{ z.note }}</div>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">No stock is inside or below a zone.</p>{% endif %}
+      <h3>Screen matches</h3>
+      {% if m.screens %}
+      <ul class="plain">
+        {% for sc in m.screens %}
+        <li><b>{{ sc.name }}</b>:
+          {% if sc.error %}<span class="down">{{ sc.error }}</span>
+          {% else %}{% for h in sc.hits %}<a href="/stock/{{ h }}">{{ h }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="muted">No screen matches.</p>{% endif %}
+    </div>
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

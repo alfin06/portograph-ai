@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PortoGraph{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css?v={{ v }}">
+  <script src="/static/vendor/htmx-2.0.4.min.js" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">PortoGraph</a>
+    <nav>
+      <a href="/" {% if nav == 'overview' %}aria-current="page"{% endif %}>Overview</a>
+      <a href="/screens" {% if nav == 'screens' %}aria-current="page"{% endif %}>Screens</a>
+      <a href="/compare" {% if nav == 'compare' %}aria-current="page"{% endif %}>Compare</a>
+      <a href="/etf" {% if nav == 'etf' %}aria-current="page"{% endif %}>ETFs</a>
+      <a href="/status" {% if nav == 'status' %}aria-current="page"{% endif %}>Status</a>
+    </nav>
+  </header>
+  <main>
+    {% if msg %}<p class="flash" role="status">{{ msg }}</p>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer>Closing prices from Yahoo Finance. Research only, not investment advice.</footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -7,6 +7,12 @@ services:
     image: portograph-ai
     restart: unless-stopped
     env_file: .env          # same file as on Windows; never baked into the image
+    environment:
+      WEB_HOST: 0.0.0.0     # inside the container; needs WEB_PASSWORD in .env
+    ports:
+      # Dashboard on the server's own localhost only. Reach it with an SSH tunnel:
+      #   ssh -L 8000:127.0.0.1:8000 you@server   then open http://127.0.0.1:8000
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data    # database, backups and logs: the only state to move
     stop_grace_period: 30s

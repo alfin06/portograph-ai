@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}ETFs · PortoGraph{% endblock %}
+{% block content %}
+<div class="page-head"><h1>ETFs</h1></div>
+
+<div class="card">
+  <form method="get" action="/etf" class="row">
+    <label>ETF <input name="a" value="{{ a or '' }}" required placeholder="VOO" list="etfs"></label>
+    <label>Compare with <input name="b" value="{{ b or '' }}" placeholder="QQQM (optional)" list="etfs"></label>
+    <button type="submit">Show</button>
+  </form>
+  <datalist id="etfs">{% for w in watched %}<option value="{{ w }}">{% endfor %}</datalist>
+  <p class="small muted">Any US-listed ETF. Profiles are fetched from Yahoo and cached for 7 days.</p>
+</div>
+
+{% for p in problems %}<p class="warnbox">{{ p }}</p>{% endfor %}
+
+{% if overlap %}
+{% set ov = overlap.ov %}
+<div class="card">
+  <h3>{{ a }} vs {{ b }}: {{ overlap.label }}</h3>
+  <dl class="kv">
+    {% if ov.correlation is not none %}<dt>Return correlation</dt><dd><b>{{ ov.correlation|num(2) }}</b> <span class="muted small">last {{ ov.corr_days }} days</span></dd>{% endif %}
+    {% if ov.sector_pct is not none %}<dt>Sector overlap</dt><dd><b>{{ ov.sector_pct|num(0) }}%</b></dd>{% endif %}
+    <dt>Top-holdings overlap</dt><dd><b>{{ ov.holdings_pct|num }}%</b> <span class="muted small">listed holdings are {{ ov.coverage_a|num(0) }}% of {{ a }}, {{ ov.coverage_b|num(0) }}% of {{ b }}</span></dd>
+  </dl>
+  {% if ov.shared %}
+  <table class="data narrow">
+    <thead><tr><th>Shared</th><th class="r">{{ a }}</th><th class="r">{{ b }}</th></tr></thead>
+    <tbody>{% for s, wa, wb in ov.shared %}<tr><td>{{ s }}</td><td class="r">{{ wa|num }}%</td><td class="r">{{ wb|num }}%</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+  <p class="small muted">Yahoo lists only each fund's top 10 holdings, so the true holdings overlap is at least this. Correlation and sectors cover the whole fund.</p>
+</div>
+{% endif %}
+
+<div class="grid">
+{% for p in profiles %}
+<div class="card">
+  <h3>{{ p.symbol }} <span class="muted small">{{ p.name or '' }}</span></h3>
+  <p class="small muted">{{ [p.category, p.family, ('since ' ~ p.inception) if p.inception else None]|select|join(' · ') }}</p>
+  <dl class="kv">
+    <dt>Expense ratio</dt><dd>{{ p.expense_ratio|num(2, '%') }}</dd>
+    <dt>Cost per Rp 100 juta</dt><dd>{{ p.fee_year|idr }} a year</dd>
+    <dt>Over 10 years</dt><dd>~{{ p.fee_drag|idr }} less <span class="muted small">vs a zero-fee fund at 7%</span></dd>
+    <dt>AUM</dt><dd>{% if p.aum_usd %}${{ (p.aum_usd / 1e9)|num }}B{% else %}–{% endif %}</dd>
+    <dt>Yield</dt><dd>{{ p.get('yield')|num(2, '%') }}</dd>
+    <dt>Turnover</dt><dd>{{ p.turnover|num(0, '%') }}</dd>
+  </dl>
+  {% if p.top_holdings %}
+  <h4>Top {{ p.top_holdings|length }} holdings ({{ p.top_holdings|sum(attribute='weight')|num }}% of the fund)</h4>
+  <ul class="bars">
+    {% for h in p.top_holdings %}
+    <li><span class="bar-label">{{ h.symbol }} <span class="muted small">{{ h.name }}</span></span>
+      <span class="bar"><span style="width: {{ [h.weight * 4, 100]|min }}%"></span></span><span class="r">{{ h.weight|num }}%</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if p.sector_list %}
+  <h4>Sectors</h4>
+  <ul class="bars">
+    {% for name, w in p.sector_list %}
+    <li><span class="bar-label">{{ name }}</span><span class="bar"><span style="width: {{ w }}%"></span></span><span class="r">{{ w|num(0) }}%</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <p class="small muted">Yahoo data as of {{ p.as_of }}.</p>
+</div>
+{% endfor %}
+</div>
+{% if not a %}<p class="muted">Your watched ETFs: {% for w in watched %}<a href="/etf?a={{ w }}">{{ w }}</a>{% if not loop.last %} · {% endif %}{% else %}none{% endfor %}</p>{% endif %}
+{% endblock %}

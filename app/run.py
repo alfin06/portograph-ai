@@ -1,4 +1,5 @@
-"""Start everything: the Telegram bot and the digest worker, each in its own process.
+"""Start everything: the Telegram bot, the digest worker and the web dashboard, each in
+its own process.
 
     python -m app.run            # start (refuses if one is already running)
     python -m app.run --status   # is it running? which processes are up?
@@ -25,7 +26,19 @@ from core import config
 
 log = logging.getLogger("run")
 
-SERVICES = {"bot": "core.telegram_bot", "worker": "app.worker"}
+SERVICES = {"bot": "core.telegram_bot", "worker": "app.worker", "web": "app.web"}
+
+
+def services_to_run() -> dict[str, str]:
+    """The web dashboard is skipped (with a reason in run.log) when it's switched off or
+    its settings would expose it without a password; the bot and worker still start."""
+    out = dict(SERVICES)
+    if not config.WEB_ENABLED:
+        out.pop("web")
+    elif config.web_problem():
+        log.error("Web dashboard not started: %s", config.web_problem())
+        out.pop("web")
+    return out
 LOCK_PORT = 47613            # localhost-only; held while running = single instance
 STABLE_AFTER_S = 120         # a run this long resets the crash backoff
 MAX_BACKOFF_S = 300
@@ -145,7 +158,7 @@ def main():
     config.require_telegram()
 
     stopping = threading.Event()
-    services = [Service(n, m, stopping) for n, m in SERVICES.items()]
+    services = [Service(n, m, stopping) for n, m in services_to_run().items()]
 
     def shutdown(*_):
         if not stopping.is_set():
@@ -163,7 +176,11 @@ def main():
     threads = [threading.Thread(target=s.supervise, name=s.name, daemon=True) for s in services]
     for t in threads:
         t.start()
-    log.info("PortoGraph running (bot + worker). Logs in %s", config.LOG_DIR)
+    names = " + ".join(s.name for s in services)
+    log.info("PortoGraph running (%s). Logs in %s", names, config.LOG_DIR)
+    if any(s.name == "web" for s in services):
+        log.info("Dashboard: http://%s:%s", "127.0.0.1" if config.WEB_HOST in config.LOOPBACK_HOSTS
+                 else config.WEB_HOST, config.WEB_PORT)
     try:
         while any(t.is_alive() for t in threads):
             time.sleep(1)

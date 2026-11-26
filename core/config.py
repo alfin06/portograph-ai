@@ -49,6 +49,22 @@ CATCHUP_HOURS = float(_env("CATCHUP_HOURS", "20") or 20)    # send a missed dige
 SCHEMA_PATH = str(PROJECT_ROOT / "database" / "schema.sql")
 RULES_PATH = str(PROJECT_ROOT / "dynamic_rules.json")
 
+# --- Web dashboard ---
+# Default: only this computer can open it. Anything else (LAN, a server) needs WEB_PASSWORD.
+WEB_HOST = _env("WEB_HOST", "127.0.0.1") or "127.0.0.1"
+WEB_PORT = int(_env("WEB_PORT", "8000") or 8000)
+WEB_PASSWORD = _env("WEB_PASSWORD")
+WEB_ENABLED = _env("WEB_ENABLED", "true").lower() not in ("0", "false", "no")
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def web_problem() -> str | None:
+    """Why the web dashboard must not start with these settings, or None if it may."""
+    if WEB_HOST not in LOOPBACK_HOSTS and not WEB_PASSWORD:
+        return (f"WEB_HOST={WEB_HOST} makes the dashboard reachable from other machines; "
+                "set WEB_PASSWORD in .env first")
+    return None
+
 
 def require_telegram() -> None:
     if not TELEGRAM_BOT_TOKEN:

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Compare · PortoGraph{% endblock %}
+{% block head %}<script src="/static/vendor/lightweight-charts-4.2.0.js" defer></script>
+<script src="/static/app.js?v={{ v }}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Compare returns in IDR and USD</h1></div>
+
+<div class="card">
+  <form method="get" action="/compare" class="row">
+    <label class="grow">Symbols <input name="symbols" value="{{ symbols }}" required placeholder="BBCA VOO QQQM" list="watched"></label>
+    <label>Period
+      <select name="period">{% for p in periods %}<option {% if p == period %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
+    <button type="submit">Compare</button>
+  </form>
+  <datalist id="watched">{% for w in watched %}<option value="{{ w }}">{% endfor %}</datalist>
+  <p class="small muted">Watchlist: {% for w in watched %}<a href="/compare?symbols={{ (symbols ~ ' ' ~ w)|trim|urlencode }}&period={{ period }}">{{ w }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+</div>
+
+{% if results %}
+<div class="card">
+  <div class="chart-tools">
+    <div class="seg-buttons" role="group" aria-label="Currency">
+      <button type="button" data-ccy="idr" aria-pressed="true">In IDR</button>
+      <button type="button" data-ccy="usd">In USD</button>
+      <button type="button" data-ccy="local">Own currency</button>
+    </div>
+    <span class="small muted">Value of 100 invested at the start, dividends reinvested</span>
+  </div>
+  <div id="cmp-chart" class="chart short"></div>
+  <script type="application/json" id="cmp-data">{{ series|tojson }}</script>
+  <div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Symbol</th><th class="r">Own currency</th><th class="r">In IDR</th><th class="r">In USD</th><th>Window</th></tr></thead>
+    <tbody>
+    {% for r in results %}
+    <tr><td><a href="/stock/{{ r.symbol }}">{{ r.symbol }}</a> <span class="muted small">{{ r.currency }}</span></td>
+      <td class="r {{ r.local|tone }}">{{ r.local|pct }}</td>
+      <td class="r {{ r.idr|tone }}"><b>{{ r.idr|pct }}</b></td>
+      <td class="r {{ r.usd|tone }}">{{ r.usd|pct }}</td>
+      <td class="small muted">{{ r.start|date('%d %b %Y') }} → {{ r.end|date('%d %b %Y') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if fx is not none %}
+  <p class="small">USD/IDR {{ fx|pct }} over the window (rupiah {{ 'weakened' if fx > 0 else 'strengthened' }}).
+    A weaker rupiah adds to US returns in IDR and cuts IDX returns in USD.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% if problems %}<ul class="plain">{% for p in problems %}<li class="warnbox">{{ p }}</li>{% endfor %}</ul>{% endif %}
+<p class="small muted">Uses stored closes only; every row ends on the same date so IDX and US rows compare fairly. In Telegram, /compare also tops up prices first.</p>
+{% endblock %}
+{% block scripts %}{% if results %}<script>window.addEventListener('DOMContentLoaded', () => PG.compareChart('cmp-chart', 'cmp-data'));</script>{% endif %}{% endblock %}

@@ -1,0 +1,25 @@
+{% if error %}
+<p class="warnbox">{{ error }}</p>
+{% else %}
+{% set ccy = inst.currency %}
+{% set unit = 'lot' if s.lot > 1 else 'share' %}
+<div class="result">
+  <p class="small">Stop {{ s.stop_distance_pct|num }}% below entry · risk {{ '%g'|format(risk) }}% = {{ s.risk_budget_idr|idr }}</p>
+  {% if s.shares == 0 %}
+  <p class="warnbox">Not even one {{ unit }} fits: one {{ unit }} would lose {{ s.one_lot_risk_idr|idr }} at the stop.
+    Use a closer stop, a higher risk %, or skip this one.</p>
+  {% if s.lot == 1 and s.fractional > 0 %}
+  <p class="small">With fractional shares: {{ s.fractional|num(2) }} shares ({{ (s.fractional * entry * s.position_idr_per_unit)|idr }}).</p>
+  {% endif %}
+  {% else %}
+  <p class="big">Buy <b>{% if s.lot > 1 %}{{ '{:,}'.format(s.shares // s.lot) }} lots ({{ '{:,}'.format(s.shares) }} shares){% else %}{{ '{:,}'.format(s.shares) }} shares{% endif %}</b></p>
+  <dl class="kv">
+    <dt>Position</dt><dd>{{ s.position|price(ccy) }} {{ ccy }} = {{ s.position_idr|idr }}</dd>
+    <dt>Share of capital</dt><dd>{{ s.weight_pct|num }}%</dd>
+    <dt>Loss if stop is hit</dt><dd class="down">−{{ s.loss_at_stop_idr|idr }} ({{ s.loss_pct|num(2) }}%)</dd>
+  </dl>
+  {% if s.capped %}<p class="small">Capped by the {{ max_pos|num(0) }}% max position; risk alone would allow more.</p>{% endif %}
+  {% endif %}
+  <p class="small muted">Fees not included (IDX ~0.15% buy, ~0.25% sell). Gaps can go through a stop.</p>
+</div>
+{% endif %}

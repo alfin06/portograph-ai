@@ -1,0 +1,30 @@
+{% macro mood_bar(mood) -%}
+{% if mood %}
+<div class="mood">
+  <div class="mood-head">
+    <span class="mood-score">{{ mood.score|round|int }}</span>
+    <span class="mood-label">{{ mood.label }}</span>
+    {% if mood.week_ago is not none %}<span class="muted">a week ago {{ mood.week_ago|round|int }}</span>{% endif %}
+  </div>
+  <div class="mood-track" role="img" aria-label="Mood {{ mood.score|round|int }} of 100, {{ mood.label }}">
+    <span class="seg s1"></span><span class="seg s2"></span><span class="seg s3"></span><span class="seg s4"></span><span class="seg s5"></span>
+    <span class="needle" style="left: {{ mood.score }}%"></span>
+  </div>
+  <div class="mood-scale muted"><span>Extreme fear</span><span>Neutral</span><span>Extreme greed</span></div>
+  <ul class="mood-inputs">
+    {% for c in mood.components %}
+    <li><span>{{ c.name }}</span><b>{{ c.value|round|int }}</b><span class="muted">{{ c.reading }}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% else %}
+<p class="muted">No mood score yet: it appears after the first digest for this market.</p>
+{% endif %}
+{%- endmacro %}
+
+{% macro zone_state(z) -%}
+{% if z.state == 'inside' %}<span class="pill good">inside</span>
+{% elif z.state == 'below' %}<span class="pill warn">below</span>
+{% elif z.distance is not none %}<span class="muted">{{ z.distance|abs|num }}% above</span>
+{% else %}<span class="muted">–</span>{% endif %}
+{%- endmacro %}

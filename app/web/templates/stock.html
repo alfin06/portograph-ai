@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% from "_macros.html" import zone_state %}
+{% set ccy = inst.currency %}
+{% set fmt = '%.0f' if ccy == 'IDR' else '%.2f' %}
+{% block title %}{{ inst.symbol }} · PortoGraph{% endblock %}
+{% block head %}<script src="/static/vendor/lightweight-charts-4.2.0.js" defer></script>
+<script src="/static/app.js?v={{ v }}" defer></script>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ inst.symbol }}
+    <span class="muted small">{{ inst.market }} {{ inst.asset_type|lower }}{% if inst.is_holding %} · holding{% endif %}{% if not inst.active %} · not watched{% endif %}</span></h1>
+  {% if snap %}
+  <p class="quote"><b>{{ snap.close|price(ccy) }}</b> {{ ccy }}
+    <span class="{{ snap.chg_1d|tone }}">{{ snap.chg_1d|pct }}</span>
+    <span class="muted">close {{ snap.date|date }}</span></p>
+  {% endif %}
+</div>
+{% if fund and (fund.sector or fund.industry) %}<p class="muted">{{ [fund.sector, fund.industry]|select|join(' / ') }}</p>{% endif %}
+
+<div class="card">
+  <div class="chart-tools">
+    <div class="seg-buttons" role="group" aria-label="Range">
+      <button type="button" data-range="126">6M</button>
+      <button type="button" data-range="252" aria-pressed="true">1Y</button>
+      <button type="button" data-range="504">2Y</button>
+      <button type="button" data-range="0">All</button>
+    </div>
+    {% if chart.bands %}
+    <label>Valuation lines
+      <select id="band-metric">
+        {% for k, b in chart.bands.items() %}<option value="{{ k }}">{{ b.label }}</option>{% endfor %}
+        <option value="">none</option>
+      </select></label>
+    {% endif %}
+    <label><input type="checkbox" id="show-sma" checked> 50/200-day averages</label>
+  </div>
+  <div id="chart" class="chart" aria-label="Price chart for {{ inst.symbol }}"></div>
+  <p class="legend small muted">
+    {% if chart.bands %}<span class="key band-cheap"></span>Cheap side: price where the measure would sit at its cheapest 10% / 25% of the last {{ profile.years }} years ·
+    <span class="key band-mid"></span>median ·
+    <span class="key band-rich"></span>75% / 90% (expensive side), using today's book value, earnings or dividend.{% endif %}
+    {% if chart.zones %}<span class="key zone"></span>Your buy zones.{% endif %}
+  </p>
+  <script type="application/json" id="chart-data">{{ chart|tojson }}</script>
+</div>
+
+<div class="grid">
+  {% if inst.asset_type != 'ETF' %}
+  <div class="card">
+    <h3>Valuation vs its own history</h3>
+    {% if readings %}
+    <table class="data">
+      <thead><tr><th></th><th class="r">Now</th><th class="r">Rank</th><th class="r">Low</th><th class="r">Typical</th><th class="r">High</th><th>Read</th></tr></thead>
+      <tbody>
+      {% for r in readings %}
+      {% set d = 2 if r.metric == 'pb' else 1 %}
+      {% set u = '%' if r.metric == 'yield' else 'x' %}
+      <tr>
+        <td>{{ {'pb':'P/B','pe':'P/E','yield':'Yield'}[r.metric] }}</td>
+        <td class="r"><b>{{ r.value|num(d, u) }}</b></td>
+        <td class="r">{{ r.rank|num(0, '%') }}</td>
+        <td class="r">{{ r.low|num(d, u) }}</td>
+        <td class="r">{{ r.typical|num(d, u) }}</td>
+        <td class="r">{{ r.high|num(d, u) }}</td>
+        <td><span class="pill {{ 'good' if r.cheap_side == 'cheap' else 'warn' if r.cheap_side == 'expensive' else '' }}">{{ r.cheap_side }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">Rank: % of past trading days with a lower value. Low/High: 10th/90th percentile.</p>
+    <ul class="plain small">
+      {% for r in readings %}
+      <li>{{ {'pb':'P/B','pe':'P/E','yield':'Yield'}[r.metric] }}: cheap side below <b>{{ r.price_cheap|price(ccy) }}</b>, typical {{ r.price_typical|price(ccy) }}</li>
+      {% endfor %}
+    </ul>
+    {% elif profile %}
+    <p class="muted">No usable P/E, P/B or dividend history (losses and no dividends?).</p>
+    {% else %}
+    <p class="muted">Not built yet. Building takes a few seconds of Yahoo calls.</p>
+    {% endif %}
+    {% if profile and profile.roe %}
+    <p class="small">ROE: {% for x in profile.roe[-5:] %}{{ x.period }} <b>{{ x.roe|num }}%</b>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if roe_warn %}<p class="warnbox">{{ roe_warn }}</p>{% endif %}
+    <form method="post" action="/stock/{{ inst.symbol }}/valuation" class="inline">
+      <button type="submit">{{ 'Rebuild' if profile else 'Build' }} from Yahoo</button>
+      {% if profile %}<span class="small muted">bands as of {{ profile.as_of }}{% if valuation_stale %} (over a week old){% endif %}</span>{% endif %}
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Fundamentals</h3>
+    {% if fund %}
+    <dl class="kv">
+      <dt>P/E</dt><dd>{{ fund.pe|num }}</dd><dt>Forward P/E</dt><dd>{{ fund.forward_pe|num }}</dd>
+      <dt>P/B</dt><dd>{{ fund.pb|num(2) }}</dd><dt>ROE</dt><dd>{{ fund.roe|num(1, '%') }}</dd>
+      <dt>ROA</dt><dd>{{ fund.roa|num(1, '%') }}</dd><dt>D/E</dt><dd>{{ fund.der|num(2, 'x') }}</dd>
+      <dt>Dividend yield</dt><dd>{{ fund.div_yield|num(1, '%') }}</dd><dt>Net margin</dt><dd>{{ fund.net_margin|num(1, '%') }}</dd>
+      <dt>Revenue growth</dt><dd>{{ fund.rev_growth|pct }}</dd><dt>EPS growth</dt><dd>{{ fund.eps_growth|pct }}</dd>
+      <dt>Market cap</dt><dd>{% if fund.market_cap_usd %}${{ (fund.market_cap_usd / 1e9)|num }}B{% else %}–{% endif %}</dd>
+    </dl>
+    <p class="small muted">Yahoo, as of {{ fund.as_of }}. Growth is year-on-year for the latest quarter.</p>
+    {% else %}<p class="muted">No fundamentals stored yet.</p>{% endif %}
+    {% if snap %}
+    <dl class="kv">
+      <dt>RSI (14)</dt><dd>{{ snap.rsi|num(0) }}</dd>
+      <dt>52-week range</dt><dd>{{ snap.low_52w|price(ccy) }} – {{ snap.high_52w|price(ccy) }}</dd>
+      <dt>1M change</dt><dd class="{{ snap.chg_1m|tone }}">{{ snap.chg_1m|pct }}</dd>
+    </dl>
+    {% if snap.signals %}<p class="small">Signals: {{ snap.signals|join(', ') }}</p>{% endif %}
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Buy zones</h3>
+    {% if zones %}
+    <ul class="plain">
+      {% for z in zones %}
+      <li class="zone-row">
+        <span>#{{ z.id }} <b>{{ z.low|price(ccy) }}–{{ z.high|price(ccy) }}</b> {{ zone_state(z) }}
+          {% if z.note %}<span class="muted small">· {{ z.note }}</span>{% endif %}</span>
+        <form method="post" action="/zones/{{ z.id }}/delete" class="inline">
+          <input type="hidden" name="next" value="/stock/{{ inst.symbol }}">
+          <button type="submit" class="link" aria-label="Delete zone {{ z.id }}">Delete</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="muted">No zones for {{ inst.symbol }}.</p>{% endif %}
+    <form method="post" action="/zones" class="stack">
+      <input type="hidden" name="symbol" value="{{ inst.symbol }}">
+      <div class="row">
+        <label>Low <input name="low" required inputmode="decimal" value="{{ fmt|format(suggest_zone.low) if suggest_zone else '' }}"></label>
+        <label>High <input name="high" required inputmode="decimal" value="{{ fmt|format(suggest_zone.high) if suggest_zone else '' }}"></label>
+      </div>
+      <label>Note <input name="note" maxlength="80" value="{{ suggest_zone.note if suggest_zone else '' }}"></label>
+      <button type="submit">Add zone</button>
+      {% if suggest_zone %}<p class="small muted">Pre-filled with its cheapest quarter by {{ suggest_zone.note.split(' ')[0] }}.</p>{% endif %}
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Position size</h3>
+    {% if capital is none %}
+    <form method="post" action="/capital" class="stack">
+      <input type="hidden" name="next" value="/stock/{{ inst.symbol }}">
+      <label>Your total investable capital (IDR) <input name="amount" required placeholder="150jt"></label>
+      <button type="submit">Save capital</button>
+    </form>
+    {% else %}
+    <p class="small">Capital {{ capital|idr }}
+      <details class="inline-details"><summary>change</summary>
+        <form method="post" action="/capital" class="row">
+          <input type="hidden" name="next" value="/stock/{{ inst.symbol }}">
+          <input name="amount" required placeholder="200jt" aria-label="New capital">
+          <button type="submit">Save</button>
+        </form>
+      </details></p>
+    <form hx-post="/size" hx-target="#size-result" class="stack">
+      <input type="hidden" name="symbol" value="{{ inst.symbol }}">
+      <div class="row">
+        <label>Entry <input name="entry" required inputmode="decimal" value="{{ fmt|format(snap.close) if snap else '' }}"></label>
+        <label>Stop <input name="stop" required inputmode="decimal"></label>
+      </div>
+      <div class="row">
+        <label>Risk % <input name="risk" inputmode="decimal" placeholder="{{ default_risk }}"></label>
+        <label>Max position % <input name="max_pos" inputmode="decimal" placeholder="{{ default_max }}"></label>
+      </div>
+      <button type="submit">Calculate</button>
+    </form>
+    <div id="size-result" aria-live="polite"></div>
+    {% endif %}
+  </div>
+</div>
+<p class="small muted">Bands only cover the years shown and assume the business is comparable. Cyclicals (miners) look cheapest on P/E at peak earnings.</p>
+{% endblock %}
+{% block scripts %}<script>window.addEventListener('DOMContentLoaded', () => PG.priceChart('chart', 'chart-data'));</script>{% endblock %}

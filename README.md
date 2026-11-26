@@ -14,7 +14,8 @@ Folder structure
   - `app/commands.py`: logic behind the Telegram commands (testable without Telegram)
   - `app/reports/`: message formatting; `app/notify/`: Telegram push
   - `app/worker.py`: scheduler that sends the daily close digests, catches up after sleep, backs up the DB
-  - `app/run.py`: starts and supervises the bot and worker (same entry point on this PC and in Docker)
+  - `app/web/`: the web dashboard (FastAPI + Jinja2 + HTMX, charts with TradingView Lightweight Charts, vendored in `app/web/static/vendor`)
+  - `app/run.py`: starts and supervises the bot, worker and dashboard (same entry point on this PC and in Docker)
   - `app/symbols.py`: symbol mapping (BBCA -> BBCA.JK, FX pairs)
 - **agents/**: Critic Agent (to be repurposed for reviewing buy/sell zones)
 - **core/**: config and the Telegram bot ([core/telegram_bot.py](core/telegram_bot.py))
@@ -50,8 +51,17 @@ python -m app.jobs.update_prices --period 1mo    # daily refresh
 python -m app.run                               # bot + digest worker together (keep running)
 ```
 
+Web dashboard
+- Open **http://127.0.0.1:8000** while PortoGraph is running. Pages:
+  - Overview: watchlist, mood, buy zones hit, screen matches.
+  - Stock (click a symbol): candle chart with 50/200-day averages, the valuation band prices (P/B, P/E or yield) and your buy zones drawn on, valuation table, fundamentals, add/delete zones, position-size calculator.
+  - Screens (try, save, delete rules), Compare (returns in IDR/USD/own currency with a growth chart), ETFs (profile and overlap), Status.
+- Pages read the database only, so they load fast and work while Yahoo or the VPN is down. "Build/Rebuild from Yahoo" on a stock page and the ETF page are the only parts that call Yahoo.
+- Only this computer can open it. To use it from your phone on home Wi-Fi, set `WEB_HOST=0.0.0.0` and `WEB_PASSWORD` in `.env`; it refuses to listen beyond this PC without a password. `WEB_ENABLED=false` turns it off. On its own: `python -m app.web`.
+- Forms only accept requests from the dashboard's own pages, so another website can't submit them through your browser.
+
 Running it on this PC
-- `python -m app.run` starts the Telegram bot and the digest worker as two processes, restarts either if it crashes, and writes `logs/bot.log`, `logs/worker.log`, `logs/run.log`. `--status` shows what's running; `--stop` shuts it down cleanly. It refuses to start a second copy.
+- `python -m app.run` starts the Telegram bot, the digest worker and the web dashboard as separate processes, restarts any that crashes, and writes `logs/bot.log`, `logs/worker.log`, `logs/web.log`, `logs/run.log`. `--status` shows what's running; `--stop` shuts it down cleanly. It refuses to start a second copy.
 - Start automatically at logon, hidden, no admin needed:
 
 ```powershell
@@ -66,7 +76,9 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1 -
 Moving to a server later
 1. On this PC: `python -m app.backup --out <folder>`, then `scripts\windows\uninstall-autostart.ps1` so two bots don't run at once.
 2. On the server (Linux with Docker): clone the repo, copy `.env` next to `docker-compose.yml`, and copy the backup to `data/portograph.db`.
-3. `docker compose up -d --build`. Same code, same command (`python -m app.run`); the database, backups and logs live in `data/`. Logs: `docker compose logs -f`.
+3. Add `WEB_PASSWORD` to `.env` (the container's dashboard won't start without one).
+4. `docker compose up -d --build`. Same code, same command (`python -m app.run`); the database, backups and logs live in `data/`. Logs: `docker compose logs -f`.
+5. The dashboard is published on the server's own localhost only. Open it through an SSH tunnel: `ssh -L 8000:127.0.0.1:8000 you@server`, then http://127.0.0.1:8000 on your PC.
 
 Daily digests
 - The worker sends an **IDX close digest** at 16:30 WIB and a **US close digest** at 17:00 New York time (about 05:00 WIB), Mon-Fri. Change the times with `DIGEST_IDX_TIME` / `DIGEST_US_TIME`.

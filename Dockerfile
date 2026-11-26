@@ -1,4 +1,4 @@
-# PortoGraph AI: Telegram bot + market digest worker in one container.
+# PortoGraph AI: Telegram bot + market digest worker + web dashboard in one container.
 # Used when moving to a server; on Windows you can run it natively instead (see README).
 FROM python:3.11-slim
 
@@ -17,6 +17,7 @@ RUN useradd --uid 1000 --create-home portograph \
     && mkdir -p /app/data \
     && chown -R portograph /app/data
 USER portograph
+EXPOSE 8000
 
 # The worker records every digest run in the DB, so a restart never double-sends
 CMD ["python", "-m", "app.run"]

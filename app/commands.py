@@ -325,7 +325,7 @@ def cmd_overlap(db, args: list[str], funds_provider=None, provider=None) -> str:
 
 # --- currency-adjusted returns -------------------------------------------------------
 def cmd_compare(db, args: list[str], provider=None, now=None) -> str:
-    from app.analytics.fx_returns import PERIOD_NAMES, currency_return
+    from app.analytics.fx_returns import PERIOD_NAMES, compare_closes
 
     usage = (f"Usage: /compare SYM SYM ... [{'|'.join(PERIOD_NAMES)}]\n"
              "Example: /compare BBCA VOO QQQM 1y")
@@ -355,19 +355,11 @@ def cmd_compare(db, args: list[str], provider=None, now=None) -> str:
         if hist.empty:
             problems.append(f"{inst['symbol']}: no prices stored yet")
             continue
-        found.append((inst, hist["Close"]))
+        found.append((inst["symbol"], inst["currency"], hist["Close"]))
 
-    # One common end date (IDX and US close on different days), so every row
-    # covers the same window and the same currency move
-    results = []
-    common_end = min((c.index[-1] for _, c in found), default=None)
-    for inst, close in found:
-        r = currency_return(inst["symbol"], inst["currency"], close[close.index <= common_end],
-                            usdidr, period)
-        if r is None:
-            problems.append(f"{inst['symbol']}: not enough history for {period}")
-        else:
-            results.append(r)
+    cmp = compare_closes(found, usdidr, period)
+    results = cmp.results
+    problems += cmp.problems
 
     lines = []
     if results:

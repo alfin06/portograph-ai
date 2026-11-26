@@ -281,11 +281,12 @@ def is_stale(profile: dict | None, today: date | None = None) -> bool:
     return profile["as_of"] <= (today - timedelta(days=MAX_AGE_DAYS)).isoformat()
 
 
-def get_profile(db, inst, provider=None, fx_provider=None, today: date | None = None) -> dict | None:
+def get_profile(db, inst, provider=None, fx_provider=None, today: date | None = None,
+                force: bool = False) -> dict | None:
     """Stored bands if fresh, otherwise recompute (a few seconds of Yahoo calls) and store.
-    Falls back to a stale copy if Yahoo fails."""
+    Falls back to a stale copy if Yahoo fails. force=True rebuilds even a fresh copy."""
     cached = db.get_valuation_bands(inst.symbol)
-    if not is_stale(cached, today):
+    if not force and not is_stale(cached, today):
         return cached
     if provider is None:
         from app.providers.yahoo_valuation import YahooValuation

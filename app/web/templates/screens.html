@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Screens · PortoGraph{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Screens</h1></div>
+
+<div class="card">
+  <h3>Try a rule</h3>
+  <form hx-post="/screens/run" hx-target="#rule-result" class="row">
+    <input name="rule" class="grow" required placeholder="pe < 12 and pb < 2 and roe > 15" aria-label="Rule">
+    <button type="submit">Run</button>
+  </form>
+  <div id="rule-result" aria-live="polite"></div>
+</div>
+
+<div class="card">
+  <h3>Saved screens</h3>
+  {% if screens %}
+  <div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Name</th><th>Market</th><th>Rule</th><th>Matches now</th><th></th></tr></thead>
+    <tbody>
+    {% for sc in screens %}
+    <tr>
+      <td><b>{{ sc.name }}</b></td>
+      <td>{{ sc.market or 'all' }}</td>
+      <td><code>{{ sc.rule }}</code></td>
+      <td>{% for h in sc.hits %}<a href="/stock/{{ h }}">{{ h }}</a>{% if not loop.last %}, {% endif %}{% else %}<span class="muted">none</span>{% endfor %}</td>
+      <td><form method="post" action="/screens/{{ sc.name }}/delete" class="inline"
+                onsubmit="return confirm('Delete screen {{ sc.name }}?')">
+            <button type="submit" class="link">Delete</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">None yet.</p>{% endif %}
+
+  <h3>Save a screen</h3>
+  <form method="post" action="/screens" class="stack">
+    <div class="row">
+      <label>Name <input name="name" required pattern="[a-zA-Z][a-zA-Z0-9_]{1,30}" placeholder="cheap_banks"></label>
+      <label>Market
+        <select name="market"><option value="">all</option><option>IDX</option><option>US</option></select></label>
+    </div>
+    <label>Rule <input name="rule" required placeholder="pb < 1.5 and roe > 12"></label>
+    <button type="submit">Save</button>
+  </form>
+  <p class="small muted">Saved screens appear in each daily digest; symbols that just started matching are marked new there.</p>
+</div>
+
+<div class="card">
+  <h3>Fields</h3>
+  <dl class="kv fields">
+    {% for k, v in fields.items() %}<dt><code>{{ k }}</code></dt><dd>{{ v }}</dd>{% endfor %}
+  </dl>
+  <p class="small muted">Join comparisons with <code>and</code> / <code>or</code>. A missing value (banks have no D/E) never matches. Screens only look at your watchlist.</p>
+</div>
+{% endblock %}

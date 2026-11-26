@@ -65,3 +65,39 @@ def currency_return(symbol: str, currency: str, close: pd.Series, usdidr: pd.Ser
         idr, usd = local, (1 + local) / (1 + fx) - 1
     return CurrencyReturn(symbol, currency, start_date, end_date,
                           local * 100, idr * 100, usd * 100, fx * 100)
+
+
+@dataclass
+class Comparison:
+    results: list[CurrencyReturn]
+    problems: list[str]
+    growth: dict[str, dict[str, pd.Series]]   # symbol -> {"local"|"idr"|"usd": value of 100 over time}
+
+
+def _in(close: pd.Series, currency: str, target: str, usdidr: pd.Series) -> pd.Series:
+    """Prices converted to `target` currency ('local' leaves them alone)."""
+    if target == "local" or target == currency.lower():
+        return close
+    fx = usdidr.reindex(close.index.union(usdidr.index)).sort_index().ffill().reindex(close.index)
+    return close * fx if target == "idr" else close / fx
+
+
+def compare_closes(found: list[tuple[str, str, pd.Series]], usdidr: pd.Series,
+                   period: str = "1y") -> Comparison:
+    """Returns for (symbol, currency, close) rows over one common window: IDX and US close
+    on different days, so every row ends on the earliest last date and shares one FX move."""
+    results, problems, growth = [], [], {}
+    common_end = min((c.index[-1] for _, _, c in found if not c.empty), default=None)
+    for sym, ccy, close in found:
+        close = close[close.index <= common_end].dropna()
+        r = currency_return(sym, ccy, close, usdidr, period)
+        if r is None:
+            problems.append(f"{sym}: not enough history for {period}")
+            continue
+        results.append(r)
+        window = close[close.index >= r.start]
+        growth[sym] = {}
+        for target in ("local", "idr", "usd"):
+            s = _in(window, ccy, target, usdidr).dropna()
+            growth[sym][target] = s / s.iloc[0] * 100 if not s.empty and s.iloc[0] else s
+    return Comparison(results, problems, growth)
