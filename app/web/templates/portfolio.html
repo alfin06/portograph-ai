@@ -49,7 +49,7 @@
         <td class="r">{{ p.weight|num(1, '%') }}</td>
         <td class="r {{ p.unrealised|tone }}">{{ p.unrealised_pct|pct }}</td>
         <td class="r {{ p.unrealised_idr|tone }}">{{ p.unrealised_idr|idrs }}
-          {% if p.fx_effect_idr is not none %}<div class="small muted">rupiah {{ p.fx_effect_idr|idrs }}</div>{% endif %}</td>
+          {% if p.fx_effect_idr is not none and (p.fx_effect_idr|abs) >= 1 %}<div class="small muted">rupiah {{ p.fx_effect_idr|idrs }}</div>{% endif %}</td>
       </tr>
       {% endfor %}
       </tbody>

@@ -886,7 +886,7 @@ def cmd_portfolio(db, args: list[str] | None = None) -> str:
         lines.append("<pre>" + escape(text) + "</pre>")
 
     for p in port.positions:
-        if p.fx_effect_idr is not None and p.unrealised_idr_pct is not None:
+        if p.fx_effect_idr is not None and abs(p.fx_effect_idr) >= 1 and p.unrealised_idr_pct is not None:
             lines.append(f"{escape(p.symbol)} in IDR {p.unrealised_idr_pct:+.1f}% "
                          f"({_idr_signed(p.unrealised_idr)}, of which the rupiah {_idr_signed(p.fx_effect_idr)})")
     if port.by_sector:
