@@ -40,6 +40,49 @@
     {% if history %}(first point {{ history[0].time }}){% endif %}.</p>
   {% endif %}
 </div>
+
+{% if bench and bench.rows %}
+<div class="card">
+  <h3>Against the market</h3>
+  <p class="small muted">What the holdings you own now, in today's quantities, did over each period, in rupiah,
+    next to the IHSG, the S&amp;P 500 and a blend in your split ({{ bench.idx_weight|num(0) }}% IDX,
+    {{ (100 - bench.idx_weight)|num(0) }}% US). This is hindsight: it ignores when you actually bought.</p>
+  {% if bench_series %}
+  <div id="bench-chart" class="chart short" aria-label="Value of 100 over the past year: your mix against the benchmarks"></div>
+  <script type="application/json" id="bench-data">{{ bench_series|tojson }}</script>
+  {% endif %}
+  <div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Period</th><th class="r">Your mix</th><th class="r">IHSG</th><th class="r">S&amp;P 500</th>
+      <th class="r">Blend</th><th class="r">Mix vs blend</th></tr></thead>
+    <tbody>
+    {% for r in bench.rows %}
+    <tr><td>{{ r.period|upper if r.period == 'ytd' else r.period }} <span class="muted small">from {{ r.start|date('%d %b %Y') }}</span></td>
+      <td class="r {{ r.mine|tone }}"><b>{{ r.mine|pct }}</b></td>
+      <td class="r {{ r.bench.ihsg|tone }}">{{ r.bench.ihsg|pct }}</td>
+      <td class="r {{ r.bench.sp500|tone }}">{{ r.bench.sp500|pct }}</td>
+      <td class="r {{ r.bench.blend|tone }}">{{ r.bench.blend|pct }}</td>
+      <td class="r {{ r.vs_blend|tone }}">{{ r.vs_blend|pct }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <h4>Your actual record</h4>
+  {% if bench.track %}
+  {% set t = bench.track %}
+  <p>From {{ t.start }} to {{ t.end }} ({{ t.days }} days stored): you <b class="{{ t.mine|tone }}">{{ t.mine|pct }}</b>,
+    IHSG {{ t.bench.get('ihsg')|pct }}, S&amp;P 500 {{ t.bench.get('sp500')|pct }}, blend {{ t.bench.get('blend')|pct }}.</p>
+  <p class="small muted">Your gain each day over the value the day before, with money put in or taken out
+    (buys, sales, dividends) left out, chained together. Short spans mostly show day-to-day noise.</p>
+  {% else %}
+  <p class="muted small">Starts once the digests have stored two days of portfolio value. It uses your real buys and
+    sales, so it becomes the fairer comparison after a few weeks.</p>
+  {% endif %}
+  <p class="small muted">Prices to {{ bench.end|date('%d %b %Y') }}. Holdings and the S&amp;P 500 (SPY) include dividends;
+    the IHSG index doesn't, about 2–3% a year.{% if bench.missing %} No prices stored for {{ bench.missing|join(', ') }}, left out.{% endif %}
+    Research only, not investment advice.</p>
+</div>
+{% endif %}
 {% endif %}
 
 {% for w in port.warnings %}<p class="warnbox">{{ w }}</p>{% endfor %}

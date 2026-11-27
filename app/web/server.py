@@ -63,6 +63,8 @@ def build_templates() -> Jinja2Templates:
     t.env.globals["v"] = str(int(max(p.stat().st_mtime for p in files)))
     t.env.filters.update(price=f_price, pct=f_pct, num=f_num, date=f_date, idr=_idr_short,
                          idrs=_idr_signed, tone=tone)
+    # keep chart series in the order they were built (your mix first, compare in the order typed)
+    t.env.policies["json.dumps_kwargs"] = {"sort_keys": False}
     return t
 
 

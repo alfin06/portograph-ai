@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.analytics import dividends, macro_calendar, portfolio, sentiment, zones
+from app.analytics import benchmark, dividends, macro_calendar, portfolio, sentiment, zones
 from app.analytics.screener import run_screens
 from app.analytics.snapshot import fx_change, market_snapshots
 from app.jobs import update_fundamentals, update_prices
@@ -66,6 +66,14 @@ def coming_up(db: DBManager, market: str, session_day: date) -> ComingUp | None:
     if not (went_ex or upcoming or soon or stale):
         return None
     return ComingUp(went_ex, upcoming, soon, stale)
+
+
+BENCH_MARKET = "US"   # the week's last close, so the comparison covers the whole week
+
+
+def weekly_bench(market: str, session_day: date) -> bool:
+    """The benchmark comparison goes in once a week: Friday's US digest."""
+    return market == BENCH_MARKET and session_day.weekday() == 4
 
 
 def run(market: str, notifier, db: DBManager | None = None, provider=None,
@@ -132,8 +140,15 @@ def run(market: str, notifier, db: DBManager | None = None, provider=None,
     except Exception:
         log.exception("%s: calendar failed", market)
         coming = None
+    bench = None
+    if port is not None and weekly_bench(market, target.date()):
+        try:
+            bench = benchmark.from_db(db)
+        except Exception:
+            log.exception("%s: benchmark failed", market)
     text = format_digest(market, snaps, target, fx=fx_change(db.get_fx_history("USDIDR", days=10)),
-                         screens=screens, mood=mood, zones=zone_events, portfolio=port, coming=coming)
+                         screens=screens, mood=mood, zones=zone_events, portfolio=port, coming=coming,
+                         bench=bench)
     notifier.send(text)
     return DigestResult("sent", text)
 

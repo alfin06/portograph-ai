@@ -108,9 +108,27 @@ def format_coming_up(c) -> str:
     return "\n\n".join(parts)
 
 
+def format_bench(bm) -> str:
+    """Weekly: the past month and year against the benchmarks, plus the real record."""
+    rows = {r.period: r for r in bm.rows}
+    lines = ["<b>📏 vs market</b> (your current mix, in rupiah)"]
+    for period, name in (("1m", "Month"), ("1y", "Year")):
+        r = rows.get(period)
+        if r is not None:
+            lines.append(f"{name}: you {r.mine:+.1f}% · IHSG {r.bench['ihsg']:+.1f}% · "
+                         f"S&amp;P 500 {r.bench['sp500']:+.1f}% · blend {r.bench['blend']:+.1f}%")
+    if bm.track is not None and bm.track.days >= 5:
+        t = bm.track
+        blend = t.bench.get("blend")
+        vs = f" vs blend {blend:+.1f}%" if blend is not None else ""
+        lines.append(f"Actual since {t.start}: {t.mine:+.1f}%{vs}")
+    lines.append("<i>Details: /benchmark</i>")
+    return "\n".join(lines) if len(lines) > 2 else ""
+
+
 def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp,
                   fx: tuple[float | None, float | None] = (None, None), screens=None,
-                  mood=None, zones=None, portfolio=None, coming=None) -> str:
+                  mood=None, zones=None, portfolio=None, coming=None, bench=None) -> str:
     title = f"<b>{MARKET_TITLE.get(market, market)} · {session_date:%a %d %b %Y}</b>"
     if not snaps:
         return f"{title}\nNo price data for this market. Check the watchlist or the data feed."
@@ -130,6 +148,10 @@ def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp
     parts.append("<pre>" + escape("\n".join(rows)) + "</pre>")
     if portfolio is not None:
         parts.append(format_portfolio(market, portfolio))
+    if bench is not None:
+        text = format_bench(bench)
+        if text:
+            parts.append(text)
 
     movers = [s for s in snaps if s.chg_1d is not None and s.date == session_date]
     if len(movers) >= 2:

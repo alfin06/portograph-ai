@@ -1031,3 +1031,45 @@ def cmd_dividends(db, args: list[str] | None = None, provider=None, today=None) 
     lines.append("<i>'~' dates are last year's, not announced. Tax: 10% IDX, 15% US with a W-8BEN. "
                  "Research only, not investment advice.</i>")
     return "\n".join(lines)
+
+
+# --- benchmarks ------------------------------------------------------------------------
+def bench_table(bm) -> str:
+    """Monospace table of period returns: your mix against each benchmark, in IDR."""
+    head = f"{'':4}{'Mix':>7}{'IHSG':>7}{'S&P':>7}{'Blend':>7}"
+    rows = [head]
+    for r in bm.rows:
+        cells = [r.mine, r.bench.get("ihsg"), r.bench.get("sp500"), r.bench.get("blend")]
+        rows.append(f"{r.period:<4}" + "".join(f"{'-' if v is None else f'{v:+.1f}':>7}" for v in cells))
+    return "<pre>" + escape("\n".join(rows)) + "</pre>"
+
+
+def track_line(t) -> str:
+    def p(v):
+        return "n/a" if v is None else f"{v:+.1f}%"
+    from datetime import date
+    return (f"Since {date.fromisoformat(t.start):%d %b} ({t.days} digests): you <b>{p(t.mine)}</b>, "
+            f"IHSG {p(t.bench.get('ihsg'))}, S&P 500 {p(t.bench.get('sp500'))}, blend {p(t.bench.get('blend'))}")
+
+
+def cmd_benchmark(db, args: list[str] | None = None) -> str:
+    from app.analytics import benchmark
+    bm = benchmark.from_db(db)
+    if bm is None:
+        return "No holdings recorded yet. Add them with /buy."
+    if not bm.rows:
+        return "Not enough stored prices to compare yet; they fill in with each digest."
+    lines = [f"<b>📏 Portfolio vs market</b> · in rupiah, to {bm.end:%d %b %Y}", bench_table(bm)]
+    lines.append(f"<i>Mix = what you hold now, in today's quantities, over each period (hindsight: "
+                 f"it ignores when you bought). Blend = {bm.idx_weight:.0f}% IHSG, "
+                 f"{100 - bm.idx_weight:.0f}% S&P 500, your current split.</i>")
+    if bm.track is not None:
+        lines.append("<b>Your actual record</b>\n" + track_line(bm.track))
+    else:
+        lines.append("Your actual record (buys and sells taken out) starts once the digests have stored "
+                     "a few days of portfolio value.")
+    if bm.missing:
+        lines.append(f"<i>No prices stored for {escape(', '.join(bm.missing))}, left out.</i>")
+    lines.append("<i>Holdings and the S&P 500 include dividends; the IHSG index doesn't (about 2–3% a year). "
+                 "Research only, not investment advice.</i>")
+    return "\n\n".join(lines)

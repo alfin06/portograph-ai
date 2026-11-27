@@ -3,6 +3,7 @@ and work while Yahoo or the VPN is down. Actions that need Yahoo (rebuilding val
 bands, ETF profiles) are explicit buttons that go through the same analytics code as
 the Telegram bot, so the numbers match."""
 import ast
+import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from app.analytics.snapshot import build_snapshot, market_snapshots
 from app.analytics.zones import distance_pct, state_of
 from app.symbols import Instrument
 from core import config
+
+log = logging.getLogger(__name__)
 
 MARKETS = ("IDX", "US")
 PRICE_PCTS = (10, 25, 50, 75, 90)   # band lines drawn on the chart, in "price percentile" terms
@@ -277,7 +280,18 @@ def portfolio(db, today: date | None = None) -> dict:
     txns = list(reversed(db.get_transactions()))
     history = [{"time": h["date"], "value": round(h["value_idr"]), "cost": round(h["cost_idr"])}
                for h in db.get_portfolio_history()]
-    return {"port": port, "history": history, "txns": txns[:100], "more_txns": max(0, len(txns) - 100),
+    bench, bench_series = None, {}
+    try:
+        from app.analytics import benchmark
+        bench = benchmark.from_db(db, port)
+        if bench is not None:
+            bench_series = {label: {"idr": [{"time": f"{d:%Y-%m-%d}", "value": round(float(v), 2)}
+                                            for d, v in s.items()]}
+                            for label, s in bench.growth.items()}
+    except Exception:   # the page still works without the comparison
+        log.exception("benchmark failed")
+    return {"port": port, "history": history, "bench": bench, "bench_series": bench_series,
+            "txns": txns[:100], "more_txns": max(0, len(txns) - 100),
             "watched": [i["symbol"] for i in db.get_instruments()],
             "today": (today or date.today()).isoformat(), "lot": pf.LOT,
             "fee_pct": pf.DEFAULT_FEE_PCT, "max_stock": pf.MAX_STOCK_PCT, "max_sector": pf.MAX_SECTOR_PCT}

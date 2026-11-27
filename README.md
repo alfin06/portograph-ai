@@ -132,6 +132,13 @@ Dividend and market calendar
 - Each digest lists that market's holdings going ex in the next 7 days, a "went ex today" line with the `/div` command, and macro events in the next 3 days. Dividends are refreshed from Yahoo once a day, for holdings only.
 - The dashboard's Calendar page shows the same for the next 90 days, with a form to record each dividend.
 
+Portfolio vs the market
+- `/benchmark`: your returns in rupiah over 1m, 3m, 6m, YTD and 1y next to the IHSG, the S&P 500 (SPY, converted at USD/IDR) and a blend of the two in your current IDX/US split.
+- Those period returns are for what you hold now, in today's quantities: hindsight that ignores when you bought, but available from day one.
+- Your actual record comes from the value history the digests store, with buys, sales and dividends taken out (a time-weighted return), against the benchmarks over the same dates. It becomes the fairer comparison after a few weeks.
+- Holdings and SPY are dividend-adjusted; the IHSG index isn't, which favours your IDX holdings by about the index's dividend yield (2-3% a year). Both index series are already stored for the mood score.
+- Friday's US digest has a 📏 line with the month and year; the dashboard's Portfolio page has a chart of the past year and the full table.
+
 Telegram commands
 - `/digest idx|us` latest close digest
 - `/fund BBCA` fundamentals and price snapshot
@@ -142,7 +149,7 @@ Telegram commands
 - `/etf VOO`, `/overlap VOO QQQM`, `/compare BBCA VOO 1y` ETF details, ETF similarity, returns in IDR and USD
 - `/value BBCA` cheap or expensive vs its own history · `/zone`, `/zones`, `/delzone` buy zones · `/capital`, `/size` position size
 - `/portfolio` holdings and profit · `/buy`, `/sell`, `/div` record · `/txns`, `/deltxn` list or delete · `/price BBCA` quick quote
-- `/dividends` upcoming ex-dates and income · `/calendar [days]` rate decisions, US data, holidays
+- `/dividends` upcoming ex-dates and income · `/calendar [days]` rate decisions, US data, holidays · `/benchmark` vs IHSG and the S&P 500
 - `/portofolio` (old spelling) is the earlier AI swing-trade list, kept as it was
 - `/status` is everything running? last digests, newest prices, last backup
 

@@ -176,8 +176,8 @@
         const btn = e.target.closest('button'); if (!btn) return;
         ccy = btn.dataset.ccy; pressed(group, btn); draw();
       };
-      group.addEventListener('click', onCcy);
-      return () => { group.removeEventListener('click', onCcy); tip.remove(); chart.remove(); };
+      if (group) group.addEventListener('click', onCcy);
+      return () => { if (group) group.removeEventListener('click', onCcy); tip.remove(); chart.remove(); };
     });
   }
 
@@ -220,5 +220,6 @@
     if (document.getElementById('chart-data')) priceChart('chart', 'chart-data');
     if (document.getElementById('cmp-data')) compareChart('cmp-chart', 'cmp-data');
     if (document.getElementById('port-data')) portfolioChart('port-chart', 'port-data');
+    if (document.getElementById('bench-data')) compareChart('bench-chart', 'bench-data');
   });
 })();
