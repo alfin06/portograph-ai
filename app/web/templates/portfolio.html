@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Portfolio · PortoGraph{% endblock %}
+{% macro qty(p) -%}
+{% if p.market == 'IDX' %}{{ p.lots|num(0) }} lots{% else %}{{ '%g'|format(p.shares) }} sh{% endif %}
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <h1>Portfolio</h1>
+  {% if port.as_of %}<p class="muted">closes to {{ port.as_of|date }}{% if port.usdidr %} · USD/IDR {{ port.usdidr|price }}{% endif %}</p>{% endif %}
+</div>
+
+{% if port.positions %}
+<div class="tiles">
+  <div class="card tile"><span class="muted small">Value</span><b class="big">{{ port.value_idr|idr }}</b>
+    {% if port.invested_pct is not none %}<span class="small muted">{{ port.invested_pct|num(0) }}% of your {{ port.capital_idr|idr }} capital</span>{% endif %}</div>
+  <div class="card tile"><span class="muted small">Today</span>
+    <b class="big {{ port.day_change_idr|tone }}">{{ port.day_change_idr|idrs }}</b>
+    <span class="small {{ port.day_change_pct|tone }}">{{ port.day_change_pct|pct }}</span></div>
+  <div class="card tile"><span class="muted small">Unrealised</span>
+    <b class="big {{ port.unrealised_idr|tone }}">{{ port.unrealised_idr|idrs }}</b>
+    <span class="small {{ port.unrealised_pct|tone }}">{{ port.unrealised_pct|pct }} on {{ port.cost_idr|idr }} cost</span></div>
+  <div class="card tile"><span class="muted small">Realised + dividends</span>
+    <b class="big {{ (port.realised_idr + port.income_idr)|tone }}">{{ (port.realised_idr + port.income_idr)|idrs }}</b>
+    <span class="small muted">sales {{ port.realised_idr|idrs }} · dividends {{ port.income_idr|idr }}</span></div>
+</div>
+{% endif %}
+
+{% for w in port.warnings %}<p class="warnbox">{{ w }}</p>{% endfor %}
+{% if port.missing_prices %}<p class="warnbox">No stored price for {{ port.missing_prices|join(', ') }}; left out of the totals until the next digest.</p>{% endif %}
+
+<div class="grid">
+  <div class="card wide">
+    <h3>Positions</h3>
+    {% if port.positions %}
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Symbol</th><th class="r">Quantity</th><th class="r">Avg cost</th><th class="r">Last</th>
+        <th class="r">Today</th><th class="r">Value (IDR)</th><th class="r">Weight</th>
+        <th class="r">Profit, own currency</th><th class="r">Profit in IDR</th></tr></thead>
+      <tbody>
+      {% for p in port.positions %}
+      <tr>
+        <td><a href="/stock/{{ p.symbol }}">{{ p.symbol }}</a> <span class="muted small">{{ p.currency }}</span></td>
+        <td class="r">{{ qty(p) }}</td>
+        <td class="r">{{ p.avg_cost|price(p.currency) }}</td>
+        <td class="r">{{ p.close|price(p.currency) }}</td>
+        <td class="r {{ p.day_change_pct|tone }}">{{ p.day_change_pct|pct }}</td>
+        <td class="r">{{ p.value_idr|idr }}</td>
+        <td class="r">{{ p.weight|num(1, '%') }}</td>
+        <td class="r {{ p.unrealised|tone }}">{{ p.unrealised_pct|pct }}</td>
+        <td class="r {{ p.unrealised_idr|tone }}">{{ p.unrealised_idr|idrs }}
+          {% if p.fx_effect_idr is not none %}<div class="small muted">rupiah {{ p.fx_effect_idr|idrs }}</div>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="small muted">Average-cost method with fees included. Profit in IDR compares today's value at today's
+      USD/IDR with what you paid in rupiah on each buy day; "rupiah" is the part of it that came from the exchange rate.</p>
+    {% else %}
+    <p class="muted">No positions recorded yet. Add your first buy below, or in Telegram: <code>/buy BBCA 10 8950 20/11</code>.</p>
+    {% endif %}
+    {% if port.untracked %}
+    <p class="small">Marked as holdings but not recorded yet:
+      {% for s in port.untracked %}<a href="/stock/{{ s }}">{{ s }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
+      Add their buys to include them.</p>
+    {% endif %}
+  </div>
+
+  {% if port.by_sector %}
+  <div class="card">
+    <h3>Allocation</h3>
+    <h4>By sector</h4>
+    <ul class="bars">
+      {% for name, w in port.by_sector %}
+      <li><span class="bar-label">{{ name }}</span><span class="bar"><span style="width: {{ w }}%"></span></span><span class="r">{{ w|num(0) }}%</span></li>
+      {% endfor %}
+    </ul>
+    <h4>By currency</h4>
+    <ul class="bars">
+      {% for name, w in port.by_currency %}
+      <li><span class="bar-label">{{ name }}</span><span class="bar"><span style="width: {{ w }}%"></span></span><span class="r">{{ w|num(0) }}%</span></li>
+      {% endfor %}
+    </ul>
+    <p class="small muted">Warnings above {{ max_stock|num(0) }}% in one stock (ETFs excluded) or {{ max_sector|num(0) }}% in one sector. Sectors come from Yahoo.</p>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Record a trade</h3>
+    <form method="post" action="/portfolio/txn" class="stack">
+      <div class="row">
+        <label>Type <select name="kind"><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label>
+        <label>Symbol <input name="symbol" required list="watched" autocomplete="off" maxlength="15"></label>
+      </div>
+      <div class="row">
+        <label>Quantity <input name="qty" required inputmode="decimal" placeholder="IDX lots / US shares"></label>
+        <label>Price <input name="price" required inputmode="decimal"></label>
+      </div>
+      <div class="row">
+        <label>Date <input name="day" type="date" value="{{ today }}" max="{{ today }}"></label>
+        <label>Fee <input name="fee" inputmode="decimal" placeholder="auto"></label>
+      </div>
+      <button type="submit">Save trade</button>
+      <p class="small muted">IDX quantity is in lots (100 shares). Leave the fee empty to assume
+        {{ fee_pct[('IDX','BUY')] }}% on IDX buys and {{ fee_pct[('IDX','SELL')] }}% on sells; type 0 for none.</p>
+    </form>
+    <h4>Dividend received</h4>
+    <form method="post" action="/portfolio/txn" class="row">
+      <input type="hidden" name="kind" value="DIV">
+      <label>Symbol <input name="symbol" required list="watched" autocomplete="off" maxlength="15"></label>
+      <label>Cash, after tax <input name="amount" required inputmode="decimal" placeholder="1.2jt"></label>
+      <label>Date <input name="day" type="date" value="{{ today }}" max="{{ today }}"></label>
+      <button type="submit">Save</button>
+    </form>
+    <datalist id="watched">{% for w in watched %}<option value="{{ w }}">{% endfor %}</datalist>
+  </div>
+
+  <div class="card wide">
+    <h3>Transactions</h3>
+    {% if txns %}
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>#</th><th>Date</th><th>Symbol</th><th>Type</th><th class="r">Quantity</th>
+        <th class="r">Price</th><th class="r">Fee</th><th class="r">Cash</th><th></th></tr></thead>
+      <tbody>
+      {% for t in txns %}
+      {% set ccy = t.currency or 'IDR' %}
+      <tr>
+        <td class="muted">{{ t.id }}</td><td>{{ t.date }}</td>
+        <td><a href="/stock/{{ t.symbol }}">{{ t.symbol }}</a></td>
+        <td>{{ {'BUY': 'Buy', 'SELL': 'Sell', 'DIV': 'Dividend'}[t.kind] }}</td>
+        {% if t.kind == 'DIV' %}
+        <td></td><td></td><td></td><td class="r">{{ t.amount|price(ccy) }} {{ ccy }}</td>
+        {% else %}
+        <td class="r">{% if t.market == 'IDX' %}{{ (t.shares / lot['IDX'])|num(0) }} lots{% else %}{{ '%g'|format(t.shares) }} sh{% endif %}</td>
+        <td class="r">{{ t.price|price(ccy) }}</td>
+        <td class="r">{{ t.fee|price(ccy) }}</td>
+        <td class="r">{{ ((t.shares * t.price) + (t.fee if t.kind == 'BUY' else -t.fee))|price(ccy) }} {{ ccy }}</td>
+        {% endif %}
+        <td><form method="post" action="/portfolio/txn/{{ t.id }}/delete" class="inline"
+                  data-confirm="Delete transaction #{{ t.id }} ({{ t.kind|lower }} {{ t.symbol }} on {{ t.date }})?">
+              <button type="submit" class="link">Delete</button></form></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if more_txns %}<p class="small muted">{{ more_txns }} older transactions not shown.</p>{% endif %}
+    {% else %}<p class="muted">None yet.</p>{% endif %}
+  </div>
+
+  {% if port.closed %}
+  <div class="card">
+    <h3>Closed positions</h3>
+    <ul class="plain">
+      {% for p in port.closed %}
+      <li><a href="/stock/{{ p.symbol }}">{{ p.symbol }}</a>
+        <span class="{{ p.realised_idr|tone }}">{{ p.realised_idr|idrs }}</span>
+        {% if p.income_idr %}<span class="muted small">+ dividends {{ p.income_idr|idr }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+<p class="small muted">Research only, not investment advice. The numbers are only as complete as the transactions entered.</p>
+{% endblock %}

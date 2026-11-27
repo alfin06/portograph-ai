@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.commands import _idr_short, parse_number
+from app.commands import _idr_short, _idr_signed, parse_number
 from app.web import security as sec
 from app.web import views
 from app.web.security import AuthGuard
@@ -61,7 +61,8 @@ def build_templates() -> Jinja2Templates:
     # ?v= on our own CSS/JS so the browser picks up a new version after an update
     files = [*(HERE / "static").rglob("*.*"), Path(__file__), HERE / "security.py"]
     t.env.globals["v"] = str(int(max(p.stat().st_mtime for p in files)))
-    t.env.filters.update(price=f_price, pct=f_pct, num=f_num, date=f_date, idr=_idr_short, tone=tone)
+    t.env.filters.update(price=f_price, pct=f_pct, num=f_num, date=f_date, idr=_idr_short,
+                         idrs=_idr_signed, tone=tone)
     return t
 
 
@@ -168,6 +169,10 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
     def status(request: Request):
         return page(request, "status.html", nav="status", **views.status(get_db()))
 
+    @app.get("/portfolio", response_class=HTMLResponse)
+    def portfolio(request: Request):
+        return page(request, "portfolio.html", nav="portfolio", **views.portfolio(get_db()))
+
     @app.get("/healthz")
     def healthz():
         return JSONResponse({"ok": True})
@@ -237,6 +242,29 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
             except ValueError as ex:
                 ctx["error"] = str(ex)
         return templates.TemplateResponse(request, "_size_result.html", ctx)
+
+    @app.post("/portfolio/txn")
+    def add_txn(kind: str = Form(...), symbol: str = Form(...), qty: str = Form(""), price: str = Form(""),
+                day: str = Form(""), fee: str = Form(""), amount: str = Form("")):
+        from app.analytics.portfolio import PortfolioError
+        from app.commands import record_transaction
+        if not sec.valid_symbol(symbol.strip()):
+            return back("/portfolio", "Not saved: not a valid symbol.")
+        try:
+            tid, summary = record_transaction(get_db(), kind[:5], symbol.strip(), qty, price, day[:20],
+                                              fee, amount)
+        except PortfolioError as e:
+            return back("/portfolio", f"Not saved: {e}")
+        return back("/portfolio", f"Saved #{tid}: {summary}")
+
+    @app.post("/portfolio/txn/{txn_id}/delete")
+    def delete_txn(txn_id: int):
+        from app.analytics.portfolio import PortfolioError
+        from app.commands import delete_transaction
+        try:
+            return back("/portfolio", delete_transaction(get_db(), txn_id))
+        except PortfolioError as e:
+            return back("/portfolio", f"Not deleted: {e}")
 
     @app.post("/screens/run", response_class=HTMLResponse)
     def run_rule(request: Request, rule: str = Form("")):

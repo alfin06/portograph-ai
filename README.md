@@ -113,6 +113,15 @@ Valuation, buy zones and position size
 - `/capital 150jt` then `/size BBCA 5800 5400 [1%] [10%]`: lots to buy so that hitting the stop loses at most the risk % of capital (default 1%), capped at the max position % (default 10%). IDX rounds to lots of 100 shares; US amounts are converted with USD/IDR, with a fractional-share figure when not even one share fits. `now` uses the last close as the entry. Fees and gaps through the stop are not included.
 - Numbers accept `5500`, `5,500`, `5.500`, `150jt`, `1.5m`, `2b`.
 
+Portfolio tracking
+- Record what you actually bought and sold: `/buy BBCA 10 8950 20/11` (IDX quantity in lots), `/buy VOO 1.5 540.20 2026-11-20 fee=0` (US in shares, fractions OK), `/sell ...` the same way, `/div BBRI 1.25jt` for dividend cash received. The date defaults to today. Without `fee=`, IDX fees are estimated at 0.15% on buys and 0.25% on sells (including the 0.1% sales tax).
+- `/portfolio`: value, today's change, unrealised and realised profit and dividends, all in IDR; a per-holding table (quantity, average cost, last close, profit %, weight); allocation by sector and currency; warnings when one stock is over 20% of the portfolio (ETFs excluded) or one sector over 40%.
+- Average-cost method, as IDX brokers report it. Cost in IDR uses the USD/IDR rate on each buy day and value uses today's, so for US holdings you also see how much of the IDR profit came from the rupiah.
+- `/txns [SYM]` lists transactions with their IDs, `/deltxn ID` deletes one. A sale larger than what you held on that day is refused, and so is deleting a buy that a later sale depends on.
+- `/price BBCA`: latest close and daily change, 52-week range, the nearest buy zone and your position.
+- The dashboard's Portfolio page shows the same, with forms to record trades and dividends; the Overview page shows a one-line summary.
+- Stocks already marked as holdings (`hold`) but with no transactions are listed so you can add their buys. Recording trades keeps the holding flag in step.
+
 Telegram commands
 - `/digest idx|us` latest close digest
 - `/fund BBCA` fundamentals and price snapshot
@@ -122,6 +131,8 @@ Telegram commands
 - `/sentiment` or `/sentiment idx` fear & greed score with each input
 - `/etf VOO`, `/overlap VOO QQQM`, `/compare BBCA VOO 1y` ETF details, ETF similarity, returns in IDR and USD
 - `/value BBCA` cheap or expensive vs its own history · `/zone`, `/zones`, `/delzone` buy zones · `/capital`, `/size` position size
+- `/portfolio` holdings and profit · `/buy`, `/sell`, `/div` record · `/txns`, `/deltxn` list or delete · `/price BBCA` quick quote
+- `/portofolio` (old spelling) is the earlier AI swing-trade list, kept as it was
 - `/status` is everything running? last digests, newest prices, last backup
 
 Optional crypto module:

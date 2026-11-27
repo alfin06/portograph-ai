@@ -180,3 +180,27 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- =====================================================================
+-- Portfolio tracking
+-- =====================================================================
+
+-- Your own buys, sells and dividends. Positions, average cost and profit are worked
+-- out from this ledger (average-cost method, as IDX brokers report it).
+-- shares are real shares (IDX lots x 100); price and fee are in the trading currency;
+-- amount is the net cash of a dividend; fx_idr is IDR per unit of that currency on the
+-- day (1 for IDR), so IDR profit includes what the exchange rate did.
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    date TEXT NOT NULL,                     -- YYYY-MM-DD
+    kind TEXT NOT NULL CHECK(kind IN ('BUY', 'SELL', 'DIV')),
+    shares REAL NOT NULL DEFAULT 0,
+    price REAL NOT NULL DEFAULT 0,
+    fee REAL NOT NULL DEFAULT 0,
+    amount REAL,
+    fx_idr REAL,
+    note TEXT,
+    created TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions (symbol, date, id);

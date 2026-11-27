@@ -102,6 +102,7 @@ table.data tbody tr:hover { background: var(--surface-0); }
 .pill.good { background: var(--good-bg); color: var(--good-fg); border-color: transparent; }
 .pill.warn { background: var(--warn-bg); color: var(--warn-fg); border-color: transparent; }
 .flash { background: var(--good-bg); color: var(--good-fg); padding: .5rem .8rem; border-radius: 8px; }
+.flash.bad { background: var(--warn-bg); color: var(--warn-fg); }
 .warnbox { background: var(--warn-bg); color: var(--warn-fg); padding: .5rem .8rem; border-radius: 8px; margin: .5rem 0; list-style: none; }
 
 ul.plain { list-style: none; padding: 0; margin: 0 0 1rem; }
@@ -183,6 +184,15 @@ ul.bars li { display: grid; grid-template-columns: minmax(0, 1.4fr) 1fr 3.2rem; 
 .bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
 .bar span { display: block; height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
+
+/* portfolio */
+.tiles { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1rem; }
+.tiles .card { margin-bottom: 0; }
+.tile { display: flex; flex-direction: column; gap: .15rem; }
+.tile .big { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+a.port-strip { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem 1.2rem; color: var(--text-primary); }
+a.port-strip:hover { text-decoration: none; border-color: var(--accent); }
+a.port-strip b { font-size: 1.15rem; }
 
 @media (max-width: 600px) {
   .chart { height: 320px; }

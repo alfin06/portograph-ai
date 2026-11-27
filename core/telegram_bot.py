@@ -68,7 +68,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🤖 Welcome to PortoGraph AI!\n\n"
         f"Commands:\n"
         f"/pending - Trades waiting for execution\n"
-        f"/portofolio - View and manage your ACTIVE trades\n"
+        f"/portfolio - Your holdings, profit and allocation\n"
+        f"/buy, /sell SYM QTY PRICE [DATE] - Record a trade (IDX in lots)\n"
+        f"/div SYM AMOUNT [DATE] - Record a dividend\n"
+        f"/txns [SYM], /deltxn ID - List or delete transactions\n"
+        f"/price SYM - Latest close, zone and your position\n"
+        f"/portofolio - Old AI swing trades (ACTIVE)\n"
         f"/reflect - Run Critic Agent analysis\n"
         f"/digest idx|us - Latest market close digest\n"
         f"/fund SYM - Fundamentals for a watched symbol\n"
@@ -381,6 +386,13 @@ def main():
     app.add_handler(CommandHandler("delzone", _text_command(cmd.cmd_delzone)))
     app.add_handler(CommandHandler("capital", _text_command(cmd.cmd_capital)))
     app.add_handler(CommandHandler("size", _text_command(cmd.cmd_size)))
+    app.add_handler(CommandHandler("portfolio", _text_command(cmd.cmd_portfolio, needs_args=False)))
+    app.add_handler(CommandHandler("buy", _text_command(cmd.cmd_buy)))
+    app.add_handler(CommandHandler("sell", _text_command(cmd.cmd_sell)))
+    app.add_handler(CommandHandler("div", _text_command(cmd.cmd_div)))
+    app.add_handler(CommandHandler("txns", _text_command(cmd.cmd_txns)))
+    app.add_handler(CommandHandler("deltxn", _text_command(cmd.cmd_deltxn)))
+    app.add_handler(CommandHandler("price", _text_command(cmd.cmd_price, slow=True)))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 PortoGraph AI Telegram Bot is running...")

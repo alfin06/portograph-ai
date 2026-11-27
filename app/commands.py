@@ -8,6 +8,11 @@ arguments and returns an HTML message, so it can be tested without Telegram.
   /screen NAME | RULE              run a saved screen or an ad-hoc rule now
   /addscreen NAME [idx|us] RULE    save (or replace) a screen
   /delscreen NAME                  delete a screen
+  /buy, /sell SYM QTY PRICE [DATE] record a trade (IDX quantity in lots)
+  /div SYM AMOUNT [DATE]           record a dividend
+  /txns [SYM], /deltxn ID          list or delete transactions
+  /portfolio                       holdings, profit in IDR, allocation
+  /price SYM                       latest close, nearest zone, your position
 """
 import ast
 import re
@@ -648,4 +653,295 @@ def cmd_size(db, args: list[str], provider=None, now=None) -> str:
         lines.append(f"ℹ️ Capped by the {max_pos:g}% max position; risk alone would allow more.")
     lines.append("<i>Fees not included (IDX ~0.15% buy, ~0.25% sell). A stop only limits losses if you "
                  "actually sell there; gaps can go through it. Research only, not investment advice.</i>")
+    return "\n".join(lines)
+
+
+# --- portfolio ---------------------------------------------------------------------------
+def _idr_signed(v: float | None) -> str:
+    if v is None:
+        return "n/a"
+    return ("+" if v >= 0 else "−") + _idr_short(abs(v))
+
+
+def parse_date(text: str, today=None):
+    """'2026-11-20', '20/11/2026', '20/11' (this year), 'today', 'yesterday' -> 'YYYY-MM-DD'.
+    None if it isn't a date, is in the future, or is before 2000."""
+    from datetime import date, datetime, timedelta
+
+    today = today or date.today()
+    s = text.strip().lower()
+    if s in ("today", "hari ini"):
+        d = today
+    elif s in ("yesterday", "kemarin"):
+        d = today - timedelta(days=1)
+    else:
+        d = None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+            try:
+                d = datetime.strptime(s, fmt).date()
+                break
+            except ValueError:
+                pass
+        if d is None:
+            m = re.fullmatch(r"(\d{1,2})/(\d{1,2})", s)
+            if not m:
+                return None
+            try:
+                d = date(today.year, int(m.group(2)), int(m.group(1)))
+            except ValueError:
+                return None
+            if d > today:                       # '28/12' typed in January means last year
+                d = d.replace(year=d.year - 1)
+    if d > today or d.year < 2000:
+        return None
+    return d.isoformat()
+
+
+def record_transaction(db, kind: str, symbol: str, qty: str = "", price: str = "", day: str = "",
+                       fee: str = "", amount: str = "", today=None) -> tuple[int, str]:
+    """Check and save a BUY, SELL or DIV, typed in Telegram or the dashboard.
+    qty is in lots for IDX and shares for US. Returns (id, plain-text summary);
+    raises PortfolioError with a readable reason."""
+    from app.analytics import portfolio as pf
+
+    kind = kind.upper()
+    if kind not in ("BUY", "SELL", "DIV"):
+        raise pf.PortfolioError("kind must be buy, sell or dividend")
+    inst = db.get_instrument(symbol) if symbol else None
+    if inst is None:
+        raise pf.PortfolioError(f"{symbol.upper()[:15]} isn't on your watchlist; add it first "
+                                f"(/watch {symbol.upper()[:15]} idx|us)")
+    market, ccy, sym = inst["market"], inst["currency"], inst["symbol"]
+    date_s = parse_date(day, today) if day.strip() else parse_date("today", today)
+    if date_s is None:
+        raise pf.PortfolioError("date must be like 2026-11-20 or 20/11, and not in the future")
+    fx = 1.0 if ccy == "IDR" else (db.get_fx_on("USDIDR", date_s) or db.get_latest_fx("USDIDR"))
+    if fx is None:
+        raise pf.PortfolioError("no USD/IDR rate stored yet; run /digest us once first")
+    row = {"symbol": sym, "date": date_s, "kind": kind, "market": market, "currency": ccy,
+           "asset_type": inst["asset_type"], "fx_idr": fx, "shares": 0.0, "price": 0.0,
+           "fee": 0.0, "amount": None}
+
+    if kind == "DIV":
+        a = parse_number(amount[:30]) if amount else None
+        if a is None or a <= 0:
+            raise pf.PortfolioError(f"dividend amount must be the cash you received in {ccy}, e.g. 1.2jt")
+        row["amount"] = a
+        summary = f"dividend {sym} {_price(a, ccy)} {ccy} on {date_s}"
+    else:
+        q = parse_number(qty[:30]) if qty else None
+        p = parse_number(price[:30]) if price else None
+        if q is None or q <= 0 or p is None or p <= 0:
+            unit = "lots" if market == "IDX" else "shares"
+            raise pf.PortfolioError(f"quantity ({unit}) and price must be positive numbers")
+        if market == "IDX" and q != int(q):
+            raise pf.PortfolioError("IDX quantity is in whole lots (1 lot = 100 shares)")
+        shares = q * pf.LOT.get(market, 1)
+        if fee.strip():
+            f = parse_number(fee[:30])
+            if f is None or f < 0:
+                raise pf.PortfolioError("fee must be an amount, e.g. 12500 (or 0)")
+            fee_note = ""
+        else:
+            f = pf.default_fee(market, kind, shares, p)
+            fee_note = f" (estimated {pf.DEFAULT_FEE_PCT[(market, kind)]:g}%)" if f else ""
+        row.update(shares=shares, price=p, fee=f)
+        summary = (f"{kind.lower()} {sym} {pf._qty(shares, market)} @ {_price(p, ccy)} {ccy} on {date_s}, "
+                   f"fee {_price(f, ccy)}{fee_note}")
+    pf.check_ledger(db, extra=row)
+    tid = db.add_transaction(sym, date_s, kind, row["shares"], row["price"], row["fee"], row["amount"],
+                             row["fx_idr"])
+    pf.sync_holding_flags(db, sym)
+    return tid, summary
+
+
+def delete_transaction(db, txn_id: int) -> str:
+    from app.analytics import portfolio as pf
+
+    t = db.get_transaction(txn_id)
+    if t is None:
+        raise pf.PortfolioError(f"no transaction #{txn_id}")
+    pf.check_ledger(db, without=txn_id)
+    db.delete_transaction(txn_id)
+    pf.sync_holding_flags(db, t["symbol"])
+    return f"Deleted #{txn_id} ({t['kind'].lower()} {t['symbol']} on {t['date']})."
+
+
+def _trade_cmd(db, kind: str, args: list[str], today=None) -> str:
+    from app.analytics.portfolio import PortfolioError
+
+    verb = kind.lower()
+    usage = (f"Usage: /{verb} SYMBOL QTY PRICE [DATE] [fee=AMOUNT]\n"
+             f"QTY is lots for IDX, shares for US (fractions OK). DATE defaults to today.\n"
+             f"Example: /{verb} BBCA 10 8950 20/11   ·   /{verb} VOO 1.5 540.20 2026-11-20 fee=0\n"
+             "Without fee= an IDX fee of ~0.15% (buy) / ~0.25% (sell) is assumed.")
+    if len(args) < 3:
+        return usage
+    fee, rest = "", []
+    for a in args[3:]:
+        if a.lower().startswith("fee="):
+            fee = a[4:]
+        else:
+            rest.append(a)
+    if len(rest) > 1:
+        return usage
+    try:
+        tid, summary = record_transaction(db, kind, args[0], args[1], args[2], rest[0] if rest else "",
+                                          fee, today=today)
+    except PortfolioError as e:
+        return f"❌ {escape(str(e))}\n\n{usage}"
+    return f"✅ #{tid}: {escape(summary)}\nSee /portfolio · undo with /deltxn {tid}"
+
+
+def cmd_buy(db, args: list[str], today=None) -> str:
+    return _trade_cmd(db, "BUY", args, today)
+
+
+def cmd_sell(db, args: list[str], today=None) -> str:
+    return _trade_cmd(db, "SELL", args, today)
+
+
+def cmd_div(db, args: list[str], today=None) -> str:
+    from app.analytics.portfolio import PortfolioError
+
+    usage = ("Usage: /div SYMBOL AMOUNT [DATE]\nAMOUNT is the cash you received after tax, in the "
+             "stock's currency.\nExample: /div BBRI 1.25jt 2026-11-20")
+    if len(args) not in (2, 3):
+        return usage
+    try:
+        tid, summary = record_transaction(db, "DIV", args[0], day=args[2] if len(args) == 3 else "",
+                                          amount=args[1], today=today)
+    except PortfolioError as e:
+        return f"❌ {escape(str(e))}\n\n{usage}"
+    return f"✅ #{tid}: {escape(summary)}\nUndo with /deltxn {tid}"
+
+
+def cmd_txns(db, args: list[str] | None = None) -> str:
+    from app.analytics.portfolio import _qty
+
+    sym = args[0].upper()[:15] if args else None
+    txns = db.get_transactions(sym)
+    if not txns:
+        return ("No transactions" + (f" for {escape(sym)}" if sym else "") +
+                " yet. Record one: /buy BBCA 10 8950 20/11")
+    lines = [f"<b>Transactions</b>{' · ' + escape(sym) if sym else ''} (newest first)"]
+    for t in reversed(txns[-25:]):
+        ccy = t["currency"] or "IDR"
+        if t["kind"] == "DIV":
+            what = f"dividend {_price(t['amount'], ccy)} {ccy}"
+        else:
+            what = (f"{t['kind'].lower()} {_qty(t['shares'], t['market'] or 'IDX')} @ {_price(t['price'], ccy)}"
+                    f"{' · fee ' + _price(t['fee'], ccy) if t['fee'] else ''}")
+        lines.append(f"#{t['id']} {t['date']} <b>{escape(t['symbol'])}</b> {what}")
+    if len(txns) > 25:
+        lines.append(f"<i>…and {len(txns) - 25} older. /txns SYMBOL shows one stock.</i>")
+    lines.append("Delete one: /deltxn ID")
+    return "\n".join(lines)
+
+
+def cmd_deltxn(db, args: list[str]) -> str:
+    from app.analytics.portfolio import PortfolioError
+
+    if len(args) != 1 or not args[0].lstrip("#").isdigit():
+        return "Usage: /deltxn ID   (IDs are in /txns)"
+    try:
+        return "✅ " + escape(delete_transaction(db, int(args[0].lstrip("#"))))
+    except PortfolioError as e:
+        return f"❌ {escape(str(e))}"
+
+
+def cmd_portfolio(db, args: list[str] | None = None) -> str:
+    from app.analytics import portfolio as pf
+
+    port = pf.build(db)
+    if not port.positions and not port.closed:
+        msg = ("No positions recorded yet. Record what you own:\n/buy BBCA 10 8950 20/11   (IDX in lots)\n"
+               "/buy VOO 1.5 540.20 2026-11-20   (US in shares)")
+        if port.untracked:
+            msg += f"\n\nMarked as holdings: {escape(', '.join(port.untracked))}"
+        if port.warnings:
+            msg += "\n\n⚠️ " + escape(" ".join(port.warnings))
+        return msg
+
+    head = "<b>Portfolio</b>" + (f" · closes to {port.as_of:%d %b %Y}" if port.as_of is not None else "")
+    lines = [head, f"Value <b>{_idr_short(port.value_idr)}</b>"
+             + (f" · today {_idr_signed(port.day_change_idr)} ({_fmt(port.day_change_pct, '%', 1, True)})"
+                if port.day_change_idr is not None else "")]
+    lines.append(f"Unrealised {_idr_signed(port.unrealised_idr)} ({_fmt(port.unrealised_pct, '%', 1, True)}) · "
+                 f"realised {_idr_signed(port.realised_idr)} · dividends {_idr_short(port.income_idr)}")
+    if port.invested_pct is not None:
+        lines.append(f"Invested: {port.invested_pct:.0f}% of your {_idr_short(port.capital_idr)} capital")
+
+    header = ("SYM", "QTY", "AVG", "LAST", "P/L", "WT")
+    rows = [header]
+    for p in port.positions:
+        qty = f"{p.lots:,.0f}lot" if p.market == "IDX" else f"{p.shares:,.4g}sh"
+        pl = "n/a" if p.unrealised_pct is None else f"{p.unrealised_pct:+.1f}%"
+        wt = "" if p.weight is None else f"{p.weight:.0f}%"
+        rows.append((p.symbol, qty, _price(p.avg_cost, p.currency), _price(p.close, p.currency), pl, wt))
+    if len(rows) > 1:
+        widths = [max(len(r[i]) for r in rows) for i in range(6)]
+        text = "\n".join(" ".join(r[i].ljust(widths[i]) if i < 2 else r[i].rjust(widths[i]) for i in range(6))
+                         for r in rows)
+        lines.append("<pre>" + escape(text) + "</pre>")
+
+    for p in port.positions:
+        if p.fx_effect_idr is not None and p.unrealised_idr_pct is not None:
+            lines.append(f"{escape(p.symbol)} in IDR {p.unrealised_idr_pct:+.1f}% "
+                         f"({_idr_signed(p.unrealised_idr)}, of which the rupiah {_idr_signed(p.fx_effect_idr)})")
+    if port.by_sector:
+        lines.append("Sectors: " + escape(" · ".join(f"{n} {w:.0f}%" for n, w in port.by_sector)))
+    if len(port.by_currency) > 1:
+        lines.append("Currency: " + " · ".join(f"{n} {w:.0f}%" for n, w in port.by_currency))
+    for w in port.warnings:
+        lines.append(f"⚠️ {escape(w)}")
+    if port.missing_prices:
+        lines.append(f"No stored price for {escape(', '.join(port.missing_prices))}; left out of the totals.")
+    if port.closed:
+        lines.append("Closed: " + escape(" · ".join(f"{p.symbol} {_idr_signed(p.realised_idr + p.income_idr)}"
+                                                    for p in port.closed)))
+    if port.untracked:
+        lines.append(f"Marked as holdings without transactions: {escape(', '.join(port.untracked))} "
+                     "(record them with /buy)")
+    lines.append("<i>Average-cost method, fees included. IDR cost uses the rate on each buy day. "
+                 "Research only, not investment advice.</i>")
+    return "\n".join(lines)
+
+
+def cmd_price(db, args: list[str], provider=None, now=None) -> str:
+    from app.analytics import portfolio as pf
+    from app.analytics.zones import distance_pct, state_of
+
+    if len(args) != 1:
+        return "Usage: /price SYMBOL   e.g. /price BBCA"
+    inst, err = _watched(db, args[0])
+    if err:
+        return err
+    _latest_close(db, inst, provider, now)
+    hist = db.get_price_history(inst.symbol, days=260)
+    if hist.empty:
+        return f"No prices stored for {escape(inst.symbol)} yet."
+    ccy, close = inst.currency, float(hist["Close"].iloc[-1])
+    prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else None
+    chg = (close / prev - 1) * 100 if prev else None
+    lines = [f"<b>{escape(inst.symbol)}</b> {_price(close, ccy)} {ccy} "
+             f"({_fmt(chg, '%', 2, True)}) · close {hist.index[-1]:%a %d %b}"]
+    lo, hi = hist["Low"].min(), hist["High"].max()
+    if lo == lo and hi == hi:                   # not NaN
+        lines.append(f"52-week range {_price(float(lo), ccy)} – {_price(float(hi), ccy)}")
+    zs = db.get_zones(inst.symbol)
+    if zs:
+        z = min(zs, key=lambda z: abs(distance_pct(close, z["low"], z["high"]) or 0))
+        st = state_of(close, z["low"], z["high"])
+        where = {"inside": "inside it", "below": "below it"}.get(
+            st, f"needs a {abs(distance_pct(close, z['low'], z['high'])):.1f}% fall to reach it")
+        lines.append(f"Buy zone #{z['id']} {_price(z['low'], ccy)}–{_price(z['high'], ccy)}: {where}")
+    txns = db.get_transactions(inst.symbol)
+    p = pf.replay(txns, db.get_latest_fx("USDIDR")).get(inst.symbol) if txns else None
+    if p and p.open:
+        value = p.shares * close
+        pl = value - p.cost
+        qty = f"{p.lots:,.0f} lots" if inst.market == "IDX" else f"{p.shares:,.4g} shares"
+        lines.append(f"You hold {qty} @ {_price(p.avg_cost, ccy)} avg: {_price(value, ccy)} {ccy}, "
+                     f"{'+' if pl >= 0 else '−'}{_price(abs(pl), ccy)} ({pl / p.cost * 100:+.1f}%)")
     return "\n".join(lines)

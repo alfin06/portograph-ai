@@ -15,14 +15,15 @@
     <a class="brand" href="/">PortoGraph</a>
     <nav>
       <a href="/" {% if nav == 'overview' %}aria-current="page"{% endif %}>Overview</a>
-      <a href="/screens" {% if nav == 'screens' %}aria-current="page"{% endif %}>Screens</a>
+      <a href="/portfolio" {% if nav == 'portfolio' %}aria-current="page"{% endif %}>Portfolio</a>
+      <a href="/screens"{% if nav == 'screens' %}aria-current="page"{% endif %}>Screens</a>
       <a href="/compare" {% if nav == 'compare' %}aria-current="page"{% endif %}>Compare</a>
       <a href="/etf" {% if nav == 'etf' %}aria-current="page"{% endif %}>ETFs</a>
       <a href="/status" {% if nav == 'status' %}aria-current="page"{% endif %}>Status</a>
     </nav>
   </header>
   <main>
-    {% if msg %}<p class="flash" role="status">{{ msg }}</p>{% endif %}
+    {% if msg %}<p class="flash{% if msg.startswith(('Not ', 'No ', "Couldn't")) %} bad{% endif %}" role="status">{{ msg }}</p>{% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer>Closing prices from Yahoo Finance. Research only, not investment advice.</footer>

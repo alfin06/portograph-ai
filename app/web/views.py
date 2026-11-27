@@ -62,7 +62,9 @@ def overview(db) -> dict:
             "screens": screens,
             "zones": [z for z in zone_rows(db, db.get_zones(market=m)) if z["state"] in ("inside", "below")],
         })
-    return {"markets": markets, "usdidr": _fx(db)}
+    from app.analytics import portfolio as pf
+    port = pf.build(db)
+    return {"markets": markets, "usdidr": _fx(db), "port": port if port.positions else None}
 
 
 def _fx(db):
@@ -266,3 +268,14 @@ def status(db, now=None) -> dict:
                    "count": len(backups)} if backups else None,
         "processes": procs.splitlines() if procs else None,
     }
+
+
+# --- portfolio -----------------------------------------------------------------------
+def portfolio(db, today: date | None = None) -> dict:
+    from app.analytics import portfolio as pf
+    port = pf.build(db)
+    txns = list(reversed(db.get_transactions()))
+    return {"port": port, "txns": txns[:100], "more_txns": max(0, len(txns) - 100),
+            "watched": [i["symbol"] for i in db.get_instruments()],
+            "today": (today or date.today()).isoformat(), "lot": pf.LOT,
+            "fee_pct": pf.DEFAULT_FEE_PCT, "max_stock": pf.MAX_STOCK_PCT, "max_sector": pf.MAX_SECTOR_PCT}

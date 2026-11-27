@@ -394,6 +394,53 @@ class DBManager:
         return default if row is None else row["value"]
 
 
+    # --- portfolio transactions ----------------------------------------------------------
+    def add_transaction(self, symbol: str, date: str, kind: str, shares: float = 0, price: float = 0,
+                        fee: float = 0, amount: float | None = None, fx_idr: float | None = None,
+                        note: str | None = None) -> int:
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                "INSERT INTO transactions (symbol, date, kind, shares, price, fee, amount, fx_idr, note, created) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (symbol.upper(), date, kind, shares, price, fee, amount, fx_idr, note,
+                 datetime.now().isoformat(timespec="seconds")))
+            return cur.lastrowid
+
+    def get_transactions(self, symbol: str | None = None) -> list[dict]:
+        """Oldest first, joined with the instrument's market and currency."""
+        q = ("SELECT t.*, i.market, i.currency, i.asset_type FROM transactions t "
+             "LEFT JOIN instruments i ON i.symbol = t.symbol")
+        params = []
+        if symbol:
+            q += " WHERE t.symbol = ?"
+            params.append(symbol.upper())
+        with self._get_connection() as conn:
+            return [dict(r) for r in conn.execute(q + " ORDER BY t.date, t.id", params).fetchall()]
+
+    def get_transaction(self, txn_id: int) -> dict | None:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+        return dict(row) if row else None
+
+    def delete_transaction(self, txn_id: int) -> bool:
+        with self._get_connection() as conn:
+            return conn.execute("DELETE FROM transactions WHERE id = ?", (txn_id,)).rowcount > 0
+
+    def set_holding(self, symbol: str, held: bool) -> None:
+        with self._get_connection() as conn:
+            conn.execute("UPDATE instruments SET is_holding = ? WHERE symbol = ?", (int(held), symbol.upper()))
+
+    def get_fx_on(self, pair: str, day: str) -> float | None:
+        """Rate on that day or the last one before it; the first one after if none before."""
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT rate FROM fx_rates WHERE pair = ? AND date <= ? "
+                               "ORDER BY date DESC LIMIT 1", (pair, day)).fetchone()
+            if row is None:
+                row = conn.execute("SELECT rate FROM fx_rates WHERE pair = ? AND date > ? "
+                                   "ORDER BY date LIMIT 1", (pair, day)).fetchone()
+        return row["rate"] if row else None
+
+
 # Quick test execution block
 if __name__ == "__main__":
     db = DBManager()

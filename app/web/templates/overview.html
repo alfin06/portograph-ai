@@ -11,6 +11,15 @@
   {% endif %}
 </div>
 
+{% if port %}
+<a class="card port-strip" href="/portfolio">
+  <span><span class="muted small">Portfolio</span> <b>{{ port.value_idr|idr }}</b></span>
+  {% if port.day_change_idr is not none %}<span class="{{ port.day_change_idr|tone }}">today {{ port.day_change_idr|idrs }} ({{ port.day_change_pct|pct }})</span>{% endif %}
+  <span class="{{ port.unrealised_idr|tone }}">unrealised {{ port.unrealised_idr|idrs }} ({{ port.unrealised_pct|pct }})</span>
+  {% if port.warnings %}<span class="pill warn">{{ port.warnings|length }} concentration warning{{ 's' if port.warnings|length > 1 }}</span>{% endif %}
+</a>
+{% endif %}
+
 {% for m in markets %}
 <section class="market">
   <h2>{{ 'Indonesia (IDX)' if m.market == 'IDX' else 'United States' }}
