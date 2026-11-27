@@ -3,8 +3,8 @@
 {% set ccy = inst.currency %}
 {% set fmt = '%.0f' if ccy == 'IDR' else '%.2f' %}
 {% block title %}{{ inst.symbol }} · PortoGraph{% endblock %}
-{% block head %}<script src="/static/vendor/lightweight-charts-4.2.0.js" defer></script>
-<script src="/static/app.js?v={{ v }}" defer></script>{% endblock %}
+{% block head %}<script src="/static/vendor/lightweight-charts-4.2.0.js?v={{ v }}" defer></script>
+{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>{{ inst.symbol }}
@@ -175,4 +175,4 @@
 </div>
 <p class="small muted">Bands only cover the years shown and assume the business is comparable. Cyclicals (miners) look cheapest on P/E at peak earnings.</p>
 {% endblock %}
-{% block scripts %}<script>window.addEventListener('DOMContentLoaded', () => PG.priceChart('chart', 'chart-data'));</script>{% endblock %}
+

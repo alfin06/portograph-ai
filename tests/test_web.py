@@ -58,7 +58,8 @@ def seeded(db):
 def client(seeded):
     db, closes = seeded
     app = create_app(db=db, funds_provider=FakeFunds({"VOO": VOO_RAW, "QQQM": QQQM_RAW}),
-                     val_provider=FakeVal(inputs()), provider=Prices(closes), fx_provider=Prices(closes))
+                     val_provider=FakeVal(inputs()), provider=Prices(closes), fx_provider=Prices(closes),
+                     extra_hosts=["testserver"])
     return TestClient(app)
 
 
@@ -170,9 +171,9 @@ def test_cross_site_posts_are_blocked(client, seeded):
 
 
 def test_password(client, monkeypatch):
-    monkeypatch.setattr(config, "WEB_PASSWORD", "s3cret")
+    monkeypatch.setattr(config, "WEB_PASSWORD", "s3cret-passphrase")
     assert client.get("/").status_code == 401
-    good = base64.b64encode(b"me:s3cret").decode()
+    good = base64.b64encode(b"me:s3cret-passphrase").decode()
     bad = base64.b64encode(b"me:wrong").decode()
     assert client.get("/", headers={"authorization": f"Basic {bad}"}).status_code == 401
     assert client.get("/", headers={"authorization": f"Basic {good}"}).status_code == 200
@@ -186,7 +187,7 @@ def test_dashboard_never_exposed_without_password(monkeypatch):
     monkeypatch.setattr(config, "WEB_HOST", "0.0.0.0")
     assert "WEB_PASSWORD" in config.web_problem()
     assert set(run.services_to_run()) == {"bot", "worker"}
-    monkeypatch.setattr(config, "WEB_PASSWORD", "x")
+    monkeypatch.setattr(config, "WEB_PASSWORD", "a-long-password")
     assert "web" in run.services_to_run()
     monkeypatch.setattr(config, "WEB_ENABLED", False)
     assert "web" not in run.services_to_run()

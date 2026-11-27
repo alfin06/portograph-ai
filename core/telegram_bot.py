@@ -16,14 +16,30 @@ from core.config import TELEGRAM_CHAT_ID
 import functools
 
 
+def is_owner(update, owner_chat_id: str = None) -> bool:
+    """True only for the owner's private chat. Fails closed: with no TELEGRAM_CHAT_ID
+    set, nobody is the owner (anyone can find a bot by its username)."""
+    owner = str(owner_chat_id if owner_chat_id is not None else TELEGRAM_CHAT_ID).strip()
+    chat, user = update.effective_chat, update.effective_user
+    if not owner or chat is None or user is None:
+        return False
+    # Private chats only: in a group, every member would share the chat id
+    return chat.type == "private" and str(chat.id) == owner and str(user.id) == owner
+
+
 def owner_only(handler):
-    """Ignore anyone except the owner once TELEGRAM_CHAT_ID is set.
-    Before it is set, everything is allowed so /start can show you your chat ID."""
+    """Ignore everyone except the owner. Unknown chats get no reply at all, so the bot
+    doesn't reveal that it exists or what it does."""
     @functools.wraps(handler)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        chat = update.effective_chat
-        if TELEGRAM_CHAT_ID and (chat is None or str(chat.id) != str(TELEGRAM_CHAT_ID)):
-            print(f"Ignored update from unauthorized chat {getattr(chat, 'id', None)}")
+        if not is_owner(update):
+            chat = update.effective_chat
+            log.warning("Ignored update from unauthorized chat %s", getattr(chat, "id", None))
+            if update.callback_query is not None:
+                try:
+                    await update.callback_query.answer()
+                except Exception:
+                    pass
             return
         return await handler(update, context)
     return wrapper
@@ -35,14 +51,21 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Initialize database
 db = DBManager()
 
-@owner_only
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the /start command and gives you your Chat ID."""
+    """Handles the /start command. Before TELEGRAM_CHAT_ID is set it only tells you your
+    chat id (nothing else works yet); afterwards only the owner gets the command list."""
     chat_id = update.message.chat_id
+    if not str(TELEGRAM_CHAT_ID).strip():
+        if update.effective_chat.type == "private":
+            await update.message.reply_text(
+                f"Your chat ID is {chat_id}. Put it in .env as TELEGRAM_CHAT_ID and restart "
+                f"PortoGraph; until then every command is switched off.")
+        return
+    if not is_owner(update):
+        log.warning("Ignored /start from unauthorized chat %s", chat_id)
+        return
     await update.message.reply_text(
         f"🤖 Welcome to PortoGraph AI!\n\n"
-        f"Your Chat ID is: `{chat_id}`\n"
-        f"Please add this to your .env file as TELEGRAM_CHAT_ID so I only talk to you.\n\n"
         f"Commands:\n"
         f"/pending - Trades waiting for execution\n"
         f"/portofolio - View and manage your ACTIVE trades\n"
@@ -320,7 +343,11 @@ def main():
         return
         
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per poll otherwise
+    # httpx logs every request URL at INFO, and Telegram's URLs contain the bot token
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if not str(TELEGRAM_CHAT_ID).strip():
+        log.warning("TELEGRAM_CHAT_ID is not set: every command is off. Send /start to the bot "
+                    "to see your chat id, put it in .env and restart.")
     # Generous timeouts: the link to Telegram (through a VPN) can be slow for a few seconds
     app = (Application.builder().token(TOKEN)
            .connect_timeout(20).read_timeout(30).write_timeout(30).pool_timeout(30)

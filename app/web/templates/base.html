@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}PortoGraph{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css?v={{ v }}">
-  <script src="/static/vendor/htmx-2.0.4.min.js" defer></script>
+  <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "includeIndicatorStyles": false, "selfRequestsOnly": true}'>
+  <script src="/static/vendor/htmx-2.0.4.min.js?v={{ v }}" defer></script>
+  <script src="/static/app.js?v={{ v }}" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>

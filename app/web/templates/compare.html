@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Compare · PortoGraph{% endblock %}
-{% block head %}<script src="/static/vendor/lightweight-charts-4.2.0.js" defer></script>
-<script src="/static/app.js?v={{ v }}" defer></script>{% endblock %}
+{% block head %}<script src="/static/vendor/lightweight-charts-4.2.0.js?v={{ v }}" defer></script>
+{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Compare returns in IDR and USD</h1></div>
 
@@ -51,4 +51,4 @@
 {% if problems %}<ul class="plain">{% for p in problems %}<li class="warnbox">{{ p }}</li>{% endfor %}</ul>{% endif %}
 <p class="small muted">Uses stored closes only; every row ends on the same date so IDX and US rows compare fairly. In Telegram, /compare also tops up prices first.</p>
 {% endblock %}
-{% block scripts %}{% if results %}<script>window.addEventListener('DOMContentLoaded', () => PG.compareChart('cmp-chart', 'cmp-data'));</script>{% endif %}{% endblock %}
+

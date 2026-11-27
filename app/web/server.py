@@ -5,11 +5,10 @@
 Usually started by `python -m app.run` together with the bot and worker. Only this
 computer can open it unless WEB_HOST is changed, and then WEB_PASSWORD is required.
 """
-import base64
 import logging
-import secrets
+import mimetypes
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -17,11 +16,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.commands import _idr_short, parse_number
+from app.web import security as sec
 from app.web import views
+from app.web.security import AuthGuard
 from core import config
 
 log = logging.getLogger("web")
 HERE = Path(__file__).parent
+
+# Windows often maps .js to text/plain in the registry, and with X-Content-Type-Options:
+# nosniff the browser then refuses to run our scripts. Set the types explicitly.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 
 
 # --- formatting used by the templates ---------------------------------------------
@@ -53,44 +59,22 @@ def tone(v):
 def build_templates() -> Jinja2Templates:
     t = Jinja2Templates(directory=str(HERE / "templates"))
     # ?v= on our own CSS/JS so the browser picks up a new version after an update
-    t.env.globals["v"] = str(int(max(p.stat().st_mtime for p in (HERE / "static").glob("app.*"))))
+    files = [*(HERE / "static").rglob("*.*"), Path(__file__), HERE / "security.py"]
+    t.env.globals["v"] = str(int(max(p.stat().st_mtime for p in files)))
     t.env.filters.update(price=f_price, pct=f_pct, num=f_num, date=f_date, idr=_idr_short, tone=tone)
     return t
 
 
-# --- security -----------------------------------------------------------------------
-def _authorized(request: Request) -> bool:
-    if not config.WEB_PASSWORD:
-        return True
-    header = request.headers.get("authorization", "")
-    if not header.lower().startswith("basic "):
-        return False
-    try:
-        _, _, password = base64.b64decode(header[6:]).decode().partition(":")
-    except Exception:
-        return False
-    return secrets.compare_digest(password.encode(), config.WEB_PASSWORD.encode())
-
-
-def _same_origin(request: Request) -> bool:
-    """Block other websites from submitting forms to this dashboard (CSRF): a page you
-    visit could otherwise POST to http://127.0.0.1:8000 from your own browser."""
-    site = request.headers.get("sec-fetch-site")
-    if site is not None:
-        return site in ("same-origin", "none")
-    source = request.headers.get("origin") or request.headers.get("referer")
-    if not source:
-        return False
-    return urlsplit(source).netloc == request.headers.get("host")
-
-
 # --- app ----------------------------------------------------------------------------
-def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None, provider=None) -> FastAPI:
-    """db and the providers are injectable for tests; by default the real DB and Yahoo."""
+def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None, provider=None,
+               extra_hosts: list[str] | None = None) -> FastAPI:
+    """db and the providers are injectable for tests; by default the real DB and Yahoo.
+    extra_hosts adds accepted Host names (tests use 'testserver')."""
     app = FastAPI(title="PortoGraph", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
     templates = build_templates()
     state = {"db": db}
+    auth = AuthGuard()
 
     def get_db():
         if state["db"] is None:
@@ -98,18 +82,49 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
             state["db"] = DBManager()
         return state["db"]
 
+    def deny(status: int, text: str, headers: dict | None = None):
+        return Response(text, status_code=status, media_type="text/plain",
+                        headers={**sec.HEADERS, "Cache-Control": "no-store", **(headers or {})})
+
     @app.middleware("http")
     async def guard(request: Request, call_next):
-        if not _authorized(request):
-            return Response("Password required", status_code=401,
-                            headers={"WWW-Authenticate": 'Basic realm="PortoGraph"'})
-        if request.method == "POST" and not _same_origin(request):
-            return Response("Cross-site request blocked", status_code=403)
-        return await call_next(request)
+        # Hosts are re-read per request so a .env change is picked up on restart only,
+        # but tests can switch WEB_PASSWORD / WEB_ALLOWED_HOSTS freely
+        if not sec.host_ok(request.headers.get("host"), sec.allowed_hosts(extra_hosts)):
+            return deny(400, "Unknown host. Open the dashboard at http://127.0.0.1:%d" % config.WEB_PORT)
+        if sec.cross_site_blocked(request.method, request.headers):
+            return deny(403, "Cross-site request blocked")
+        client = request.client.host if request.client else "?"
+        if config.WEB_PASSWORD:
+            if auth.locked(client):
+                return deny(429, "Too many wrong passwords. Try again in 15 minutes.")
+            if not auth.check(client, request.headers.get("authorization")):
+                return deny(401, "Password required", {"WWW-Authenticate": 'Basic realm="PortoGraph", charset="UTF-8"'})
+        if request.method == "POST":
+            if not sec.same_origin(request.headers):
+                return deny(403, "Cross-site request blocked")
+            size = request.headers.get("content-length")
+            if size is None or not size.isdigit() or int(size) > sec.MAX_BODY:
+                return deny(413, "Request too large")
+        elif request.method not in ("GET", "HEAD"):
+            return deny(405, "Method not allowed")
+        response = await call_next(request)
+        for k, v in sec.HEADERS.items():
+            response.headers.setdefault(k, v)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"   # revalidate (ETag), so fixes always load
+        else:
+            response.headers["Cache-Control"] = "no-store"   # pages hold your holdings and capital
+        return response
 
     def page(request, name, status_code=200, **ctx):
-        ctx.setdefault("msg", request.query_params.get("msg"))
+        msg = request.query_params.get("msg")
+        ctx.setdefault("msg", msg[:sec.MAX_MSG] if msg else None)
         return templates.TemplateResponse(request, name, ctx, status_code=status_code)
+
+    def bad_symbol(request, symbol):
+        return page(request, "notfound.html", status_code=404, nav=None,
+                    what=f"{symbol[:20]!r} isn't a valid symbol.")
 
     def back(url: str, msg: str | None = None):
         if msg:
@@ -123,6 +138,8 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
 
     @app.get("/stock/{symbol}", response_class=HTMLResponse)
     def stock(request: Request, symbol: str):
+        if not sec.valid_symbol(symbol):
+            return bad_symbol(request, symbol)
         data = views.stock(get_db(), symbol)
         if data is None:
             return page(request, "notfound.html", status_code=404, nav=None,
@@ -135,7 +152,7 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
 
     @app.get("/compare", response_class=HTMLResponse)
     def compare(request: Request, symbols: str = "", period: str = "1y"):
-        syms = [s for s in symbols.replace(",", " ").upper().split() if s]
+        syms = [s for s in symbols[:200].replace(",", " ").upper().split() if sec.valid_symbol(s)][:8]
         data = views.compare(get_db(), syms, period) if syms else {"period": period}
         watched = [i["symbol"] for i in get_db().get_instruments()]
         return page(request, "compare.html", nav="compare", symbols=" ".join(syms),
@@ -143,7 +160,7 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
 
     @app.get("/etf", response_class=HTMLResponse)
     def etf(request: Request, a: str = "", b: str = ""):
-        a, b = a.strip().upper() or None, b.strip().upper() or None
+        a, b = (x.strip().upper() if sec.valid_symbol(x.strip()) else None for x in (a, b))
         data = views.etf_page(get_db(), a, b, funds_provider=funds_provider, provider=provider)
         return page(request, "etf.html", nav="etf", **data)
 
@@ -158,6 +175,8 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
     # actions --------------------------------------------------------------------
     @app.post("/stock/{symbol}/valuation")
     def rebuild_valuation(symbol: str):
+        if not sec.valid_symbol(symbol):
+            return back("/", "Not a valid symbol.")
         as_of = views.refresh_valuation(get_db(), symbol, provider=val_provider, fx_provider=fx_provider)
         msg = f"Valuation bands as of {as_of}." if as_of else \
             "Couldn't build valuation bands (Yahoo unreachable or not enough history)."
@@ -167,11 +186,11 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
     def add_zone(symbol: str = Form(...), low: str = Form(...), high: str = Form(...), note: str = Form("")):
         from datetime import datetime
         db = get_db()
-        inst = db.get_instrument(symbol)
+        inst = db.get_instrument(symbol) if sec.valid_symbol(symbol) else None
         lo, hi = parse_number(low), parse_number(high)
         url = f"/stock/{quote(symbol.upper())}"
         if inst is None:
-            return back("/", f"{symbol.upper()} isn't on your watchlist.")
+            return back("/", "That symbol isn't on your watchlist.")
         if lo is None or hi is None or lo <= 0 or hi <= 0:
             return back(url, "Zone not saved: low and high must be prices, e.g. 5500 and 5950.")
         zid = db.add_zone(inst["symbol"], min(lo, hi), max(lo, hi), note.strip()[:80] or None,
@@ -181,13 +200,13 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
     @app.post("/zones/{zone_id}/delete")
     def delete_zone(zone_id: int, next: str = Form("/")):
         ok = get_db().delete_zone(zone_id)
-        url = next if next.startswith("/") and not next.startswith("//") else "/"
+        url = sec.safe_next(next)
         return back(url, f"Zone #{zone_id} deleted." if ok else f"No zone #{zone_id}.")
 
     @app.post("/capital")
     def set_capital(amount: str = Form(...), next: str = Form("/")):
-        v = parse_number(amount)
-        url = next if next.startswith("/") and not next.startswith("//") else "/"
+        v = parse_number(amount[:30])
+        url = sec.safe_next(next)
         if v is None or v <= 0:
             return back(url, "Capital not saved: use an amount like 150jt or 150000000.")
         get_db().set_setting("capital_idr", v)
@@ -198,7 +217,8 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
              risk: str = Form(""), max_pos: str = Form("")):
         from app.analytics.sizing import DEFAULT_MAX_POSITION_PCT, DEFAULT_RISK_PCT, size_position
         db = get_db()
-        inst, cap = db.get_instrument(symbol), db.get_setting("capital_idr")
+        inst = db.get_instrument(symbol) if sec.valid_symbol(symbol) else None
+        cap = db.get_setting("capital_idr")
         ctx = {"error": None, "s": None, "inst": inst}
         e, st = parse_number(entry), parse_number(stop)
         r = parse_number(risk.rstrip("%")) if risk.strip() else DEFAULT_RISK_PCT
@@ -238,6 +258,9 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
 
     @app.post("/screens/{name}/delete")
     def delete_screen(name: str):
+        from app.commands import NAME_RE
+        if not NAME_RE.match(name):
+            return back("/screens", "Not a valid screen name.")
         ok = get_db().delete_screen(name)
         return back("/screens", f"Deleted {name}." if ok else f"No screen called {name}.")
 
@@ -254,7 +277,9 @@ def main():
     log.info("Dashboard on http://%s:%s", "127.0.0.1" if config.WEB_HOST in config.LOOPBACK_HOSTS
              else config.WEB_HOST, config.WEB_PORT)
     uvicorn.run(create_app(), host=config.WEB_HOST, port=config.WEB_PORT,
-                access_log=False, log_level="warning")
+                access_log=False, log_level="warning", server_header=False,
+                proxy_headers=False,              # never trust X-Forwarded-For for the lockout
+                limit_concurrency=50, timeout_keep_alive=5)
 
 
 if __name__ == "__main__":

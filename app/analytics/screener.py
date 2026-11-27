@@ -38,6 +38,9 @@ _CMP = {ast.Lt: operator.lt, ast.LtE: operator.le, ast.Gt: operator.gt,
         ast.GtE: operator.ge, ast.Eq: operator.eq, ast.NotEq: operator.ne}
 
 
+MAX_RULE_LEN = 300
+
+
 class RuleError(ValueError):
     pass
 
@@ -55,6 +58,8 @@ def parse_rule(text: str) -> Rule:
     src = " ".join(text.strip().lower().split())
     if not src:
         raise RuleError("Rule is empty.")
+    if len(src) > MAX_RULE_LEN:   # also keeps ast.parse away from deeply nested input
+        raise RuleError(f"Rule is too long (max {MAX_RULE_LEN} characters).")
     try:
         tree = ast.parse(src, mode="eval")
     except SyntaxError:

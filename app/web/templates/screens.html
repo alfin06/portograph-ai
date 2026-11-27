@@ -26,7 +26,7 @@
       <td><code>{{ sc.rule }}</code></td>
       <td>{% for h in sc.hits %}<a href="/stock/{{ h }}">{{ h }}</a>{% if not loop.last %}, {% endif %}{% else %}<span class="muted">none</span>{% endfor %}</td>
       <td><form method="post" action="/screens/{{ sc.name }}/delete" class="inline"
-                onsubmit="return confirm('Delete screen {{ sc.name }}?')">
+                data-confirm="Delete screen {{ sc.name }}?">
             <button type="submit" class="link">Delete</button></form></td>
     </tr>
     {% endfor %}

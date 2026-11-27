@@ -1,6 +1,8 @@
-// PortoGraph charts (TradingView Lightweight Charts 4.2, vendored in /static/vendor).
+// PortoGraph page scripts. Charts use TradingView Lightweight Charts 4.2 (vendored in
+// /static/vendor). No inline scripts anywhere: the Content-Security-Policy forbids them,
+// so pages declare what they need with data in the HTML and this file wires it up.
 (function () {
-  const LC = window.LightweightCharts;
+  let LC;   // the chart library loads after this file; looked up when a chart is drawn
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const SERIES = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `--series-${i}`);
 
@@ -179,5 +181,16 @@
     });
   }
 
-  window.PG = { priceChart, compareChart };
+  // Forms with data-confirm ask before submitting (e.g. deleting a screen)
+  document.addEventListener('submit', (e) => {
+    const msg = e.target.dataset && e.target.dataset.confirm;
+    if (msg && !window.confirm(msg)) e.preventDefault();
+  });
+
+  window.addEventListener('DOMContentLoaded', () => {
+    LC = window.LightweightCharts;
+    if (!LC) return;
+    if (document.getElementById('chart-data')) priceChart('chart', 'chart-data');
+    if (document.getElementById('cmp-data')) compareChart('cmp-chart', 'cmp-data');
+  });
 })();

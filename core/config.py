@@ -55,11 +55,17 @@ WEB_HOST = _env("WEB_HOST", "127.0.0.1") or "127.0.0.1"
 WEB_PORT = int(_env("WEB_PORT", "8000") or 8000)
 WEB_PASSWORD = _env("WEB_PASSWORD")
 WEB_ENABLED = _env("WEB_ENABLED", "true").lower() not in ("0", "false", "no")
+# Hostnames the browser may use to reach the dashboard (besides localhost), e.g. your PC's
+# LAN address "192.168.1.20". Blocks DNS-rebinding attacks from websites you visit.
+WEB_ALLOWED_HOSTS = [h.strip().lower() for h in _env("WEB_ALLOWED_HOSTS").split(",") if h.strip()]
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+MIN_WEB_PASSWORD = 12
 
 
 def web_problem() -> str | None:
     """Why the web dashboard must not start with these settings, or None if it may."""
+    if WEB_PASSWORD and len(WEB_PASSWORD) < MIN_WEB_PASSWORD:
+        return f"WEB_PASSWORD must be at least {MIN_WEB_PASSWORD} characters"
     if WEB_HOST not in LOOPBACK_HOSTS and not WEB_PASSWORD:
         return (f"WEB_HOST={WEB_HOST} makes the dashboard reachable from other machines; "
                 "set WEB_PASSWORD in .env first")

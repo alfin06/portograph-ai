@@ -40,7 +40,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-3. Copy `.env.example` to `.env` and fill in the Forge and Telegram keys.
+3. Copy `.env.example` to `.env` and fill in the Forge and Telegram keys. Send `/start` to your bot to get your chat ID; until `TELEGRAM_CHAT_ID` is set every command is off.
 
 4. Run everything **from the project root with `python -m`**:
 
@@ -58,7 +58,8 @@ Web dashboard
   - Screens (try, save, delete rules), Compare (returns in IDR/USD/own currency with a growth chart), ETFs (profile and overlap), Status.
 - Pages read the database only, so they load fast and work while Yahoo or the VPN is down. "Build/Rebuild from Yahoo" on a stock page and the ETF page are the only parts that call Yahoo.
 - Only this computer can open it. To use it from your phone on home Wi-Fi, set `WEB_HOST=0.0.0.0` and `WEB_PASSWORD` in `.env`; it refuses to listen beyond this PC without a password. `WEB_ENABLED=false` turns it off. On its own: `python -m app.web`.
-- Forms only accept requests from the dashboard's own pages, so another website can't submit them through your browser.
+- Security: forms only accept requests from the dashboard's own pages, other websites can't load or embed it, and wrong passwords lock you out for 15 minutes after 10 tries. Details and limits in [SECURITY.md](SECURITY.md).
+- Lock `.env`, the database and logs to your Windows account: `powershell -ExecutionPolicy Bypass -File scripts\windows\lock-down-files.ps1`
 
 Running it on this PC
 - `python -m app.run` starts the Telegram bot, the digest worker and the web dashboard as separate processes, restarts any that crashes, and writes `logs/bot.log`, `logs/worker.log`, `logs/web.log`, `logs/run.log`. `--status` shows what's running; `--stop` shuts it down cleanly. It refuses to start a second copy.

@@ -16,3 +16,13 @@ services:
     volumes:
       - ./data:/app/data    # database, backups and logs: the only state to move
     stop_grace_period: 30s
+    # Hardening: read-only system files, no privilege escalation, no Linux capabilities
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 1g
+    pids_limit: 256
