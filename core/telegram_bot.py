@@ -73,6 +73,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"/div SYM AMOUNT [DATE] - Record a dividend\n"
         f"/txns [SYM], /deltxn ID - List or delete transactions\n"
         f"/price SYM - Latest close, zone and your position\n"
+        f"/dividends - Upcoming ex-dates and income for your holdings\n"
+        f"/calendar - Rate decisions, US data, market holidays\n"
         f"/portofolio - Old AI swing trades (ACTIVE)\n"
         f"/reflect - Run Critic Agent analysis\n"
         f"/digest idx|us - Latest market close digest\n"
@@ -393,6 +395,8 @@ def main():
     app.add_handler(CommandHandler("txns", _text_command(cmd.cmd_txns)))
     app.add_handler(CommandHandler("deltxn", _text_command(cmd.cmd_deltxn)))
     app.add_handler(CommandHandler("price", _text_command(cmd.cmd_price, slow=True)))
+    app.add_handler(CommandHandler("dividends", _text_command(cmd.cmd_dividends, slow=True)))
+    app.add_handler(CommandHandler("calendar", _text_command(cmd.cmd_calendar)))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 PortoGraph AI Telegram Bot is running...")

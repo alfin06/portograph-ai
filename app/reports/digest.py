@@ -89,9 +89,28 @@ def format_portfolio(market: str, sec) -> str:
     return "\n".join(lines)
 
 
+def format_coming_up(c) -> str:
+    from app.commands import div_line, record_hint   # shared with /dividends
+
+    parts = []
+    if c.went_ex or c.dividends:
+        lines = ["<b>💰 Dividends</b>"]
+        for e in c.went_ex:
+            lines.append(div_line(e, with_cum=False).replace(" ex ", " went ex ", 1)
+                         + f"\n  when the cash arrives: <code>{escape(record_hint(e))}</code>")
+        lines += [div_line(e) for e in c.dividends]
+        parts.append("\n".join(lines))
+    if c.events:
+        parts.append("<b>📅 Coming up</b>\n" + "\n".join(
+            f"{e.icon} {e.day:%a %d %b} {escape(e.title)}" for e in c.events))
+    if c.calendar_stale:
+        parts.append("<i>⚠️ The macro calendar (app/reference/calendar.json) needs next year's dates.</i>")
+    return "\n\n".join(parts)
+
+
 def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp,
                   fx: tuple[float | None, float | None] = (None, None), screens=None,
-                  mood=None, zones=None, portfolio=None) -> str:
+                  mood=None, zones=None, portfolio=None, coming=None) -> str:
     title = f"<b>{MARKET_TITLE.get(market, market)} · {session_date:%a %d %b %Y}</b>"
     if not snaps:
         return f"{title}\nNo price data for this market. Check the watchlist or the data feed."
@@ -128,6 +147,11 @@ def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp
 
     if zones:
         parts.append(format_zones(zones))
+
+    if coming is not None:
+        text = format_coming_up(coming)
+        if text:
+            parts.append(text)
 
     if screens:
         parts.append(format_screens(screens))

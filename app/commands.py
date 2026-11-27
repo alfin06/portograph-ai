@@ -945,3 +945,89 @@ def cmd_price(db, args: list[str], provider=None, now=None) -> str:
         lines.append(f"You hold {qty} @ {_price(p.avg_cost, ccy)} avg: {_price(value, ccy)} {ccy}, "
                      f"{'+' if pl >= 0 else '−'}{_price(abs(pl), ccy)} ({pl / p.cost * 100:+.1f}%)")
     return "\n".join(lines)
+
+
+# --- dividends ---------------------------------------------------------------------------
+def _div_qty(e) -> str:
+    return f"{e.lots:,.0f} lots" if e.market == "IDX" else f"{e.shares:,.4g} shares"
+
+
+def div_line(e, with_cum: bool = True) -> str:
+    """One dividend event as a line of HTML, shared by /dividends and the digests."""
+    ccy = e.currency
+    amt = "amount not announced yet" if e.per_share is None else (
+        f"{_price(e.per_share, ccy)}/share ≈ {_price(e.gross, ccy)} {ccy} for your {_div_qty(e)}"
+        f" (≈ {_price(e.net, ccy)} after tax)")
+    if e.status == "expected":
+        return f"• <b>{escape(e.symbol)}</b> ~{e.ex_date:%d %b}? {amt} · <i>estimate: {escape(e.basis)}</i>"
+    cum = f" · own it by the close of {e.cum_date:%a %d %b}" if with_cum and e.status == "announced" else ""
+    return f"• <b>{escape(e.symbol)}</b> ex {e.ex_date:%a %d %b}: {amt}{cum}"
+
+
+def record_hint(e) -> str:
+    if e.net is None:
+        return f"/div {e.symbol} AMOUNT"
+    return f"/div {e.symbol} {e.net:.0f}" if e.currency == "IDR" else f"/div {e.symbol} {e.net:.2f}"
+
+
+def cmd_calendar(db, args: list[str] | None = None, today=None) -> str:
+    """Next 14 days (or /calendar 30): macro events, market holidays, your dividends."""
+    from datetime import date
+
+    from app.analytics import dividends as dv
+    from app.analytics import macro_calendar as mc
+
+    today = today or date.today()
+    days = 14
+    if args:
+        if not args[0].isdigit() or not 1 <= int(args[0]) <= 120:
+            return "Usage: /calendar [DAYS]   e.g. /calendar 30 (up to 120)"
+        days = int(args[0])
+    events, _ = mc.load()
+    lines = [f"<b>📅 Next {days} days</b>"]
+    divs = [e for e in dv.calendar(db, today=today, days=days)["upcoming"]]
+    rows = [(e.day, f"{e.icon} {escape(e.title)}") for e in mc.upcoming(events, today, days)]
+    rows += [(e.ex_date, ("💰 ~" if e.status == "expected" else "💰 ") + f"{escape(e.symbol)} ex-dividend"
+              + (f" ({_price(e.per_share, e.currency)}/share)" if e.per_share else "")) for e in divs]
+    if not rows:
+        lines.append("Nothing scheduled.")
+    for d, text in sorted(rows, key=lambda r: r[0]):
+        lines.append(f"{d:%a %d %b} {text}")
+    end = mc.covered_until(events)
+    if mc.needs_update(events, today):
+        lines.append(f"<i>⚠️ The macro calendar file runs out on {end:%d %b %Y}. Update "
+                     f"app/reference/calendar.json with next year's schedules.</i>" if end else
+                     "<i>⚠️ No macro calendar file found (app/reference/calendar.json).</i>")
+    lines.append("<i>~ = estimated from last year. /dividends has amounts and your expected cash.</i>")
+    return "\n".join(lines)
+
+
+def cmd_dividends(db, args: list[str] | None = None, provider=None, today=None) -> str:
+    from app.analytics import dividends as dv
+
+    try:
+        failed = dv.refresh(db, provider=provider, today=today)
+    except Exception:
+        failed = ["all"]
+    cal = dv.calendar(db, today=today)
+    lines = [f"<b>💰 Dividends</b> · next {dv.LOOKAHEAD_DAYS} days, your holdings"]
+    if cal["upcoming"]:
+        lines += [div_line(e) for e in cal["upcoming"]]
+    else:
+        lines.append("Nothing announced or expected.")
+    if cal["to_record"]:
+        lines.append("\n<b>Went ex while you held it; record the cash when it arrives</b>")
+        for e in cal["to_record"]:
+            lines.append(f"{div_line(e, with_cum=False)}\n  <code>{escape(record_hint(e))}</code>")
+    income = [r for r in dv.yearly_income(db, today=today) if r["gross_idr"] > 0]
+    if income:
+        total = sum(r["gross_idr"] for r in income)
+        net = sum(r["net_idr"] for r in income)
+        lines.append(f"\nLast 12 months' dividends on what you hold now: {_idr_short(total)} a year "
+                     f"(≈ {_idr_short(net)} after tax)")
+        lines.append(escape(" · ".join(f"{r['symbol']} {_idr_short(r['gross_idr'])}" for r in income[:6])))
+    if failed:
+        lines.append(f"<i>Couldn't refresh from Yahoo: {escape(', '.join(failed))}; showing stored data.</i>")
+    lines.append("<i>'~' dates are last year's, not announced. Tax: 10% IDX, 15% US with a W-8BEN. "
+                 "Research only, not investment advice.</i>")
+    return "\n".join(lines)

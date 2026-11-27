@@ -446,6 +446,36 @@ class DBManager:
         with self._get_connection() as conn:
             return [dict(r) for r in conn.execute("SELECT * FROM portfolio_history ORDER BY date").fetchall()]
 
+    # --- dividends -------------------------------------------------------------------
+    def save_dividends(self, symbol: str, rows: list[tuple[str, float | None]], source: str,
+                       fetched: str) -> None:
+        """Store ex-dates; an upcoming date that is no longer announced (moved or
+        cancelled) is removed, and a known amount is never replaced by an unknown one."""
+        sym = symbol.upper()
+        with self._get_connection() as conn:
+            keep = [d for d, _ in rows if d >= fetched]
+            conn.execute(f"DELETE FROM dividends WHERE symbol = ? AND ex_date >= ? "
+                         f"AND ex_date NOT IN ({','.join('?' * len(keep)) or 'NULL'})", (sym, fetched, *keep))
+            conn.executemany(
+                "INSERT INTO dividends (symbol, ex_date, amount, source, fetched) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(symbol, ex_date) DO UPDATE SET amount=COALESCE(excluded.amount, dividends.amount), "
+                "source=excluded.source, fetched=excluded.fetched",
+                [(sym, d, a, source, fetched) for d, a in rows])
+            # remember the fetch even for a symbol that never paid
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (f"dividends_fetched:{sym}", fetched))
+
+    def get_dividends(self, symbol: str | None = None, since: str | None = None) -> list[dict]:
+        q, params = "SELECT * FROM dividends WHERE 1=1", []
+        if symbol:
+            q += " AND symbol = ?"
+            params.append(symbol.upper())
+        if since:
+            q += " AND ex_date >= ?"
+            params.append(since)
+        with self._get_connection() as conn:
+            return [dict(r) for r in conn.execute(q + " ORDER BY ex_date, symbol", params).fetchall()]
+
     def get_fx_on(self, pair: str, day: str) -> float | None:
         """Rate on that day or the last one before it; the first one after if none before."""
         with self._get_connection() as conn:

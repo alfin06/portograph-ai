@@ -217,3 +217,18 @@ CREATE TABLE IF NOT EXISTS portfolio_history (
     usdidr REAL,
     recorded_at TEXT NOT NULL
 );
+
+-- =====================================================================
+-- Dividend calendar
+-- =====================================================================
+
+-- Ex-dividend dates per symbol: the past ~3 years plus announced upcoming ones.
+-- amount is per share in the trading currency; NULL = date announced, amount not yet.
+CREATE TABLE IF NOT EXISTS dividends (
+    symbol TEXT NOT NULL,
+    ex_date TEXT NOT NULL,                  -- YYYY-MM-DD
+    amount REAL,
+    source TEXT NOT NULL,
+    fetched TEXT NOT NULL,                  -- YYYY-MM-DD
+    PRIMARY KEY (symbol, ex_date)
+);

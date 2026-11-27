@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Calendar · PortoGraph{% endblock %}
+{% macro qty(e) -%}
+{% if e.market == 'IDX' %}{{ e.lots|num(0) }} lots{% else %}{{ '%g'|format(e.shares) }} sh{% endif %}
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <h1>Calendar</h1>
+  <form method="post" action="/calendar/refresh" class="inline">
+    <button type="submit">Refresh dividends from Yahoo</button>
+    {% if divs_fetched %}<span class="small muted">fetched {{ divs_fetched }}</span>{% endif %}
+  </form>
+</div>
+{% if stale %}<p class="warnbox">The macro calendar file runs out {% if covered_until %}on {{ covered_until|date('%d %b %Y') }}{% endif %}.
+  Add next year's dates to <code>app/reference/calendar.json</code>.</p>{% endif %}
+
+{% if to_record %}
+<div class="card">
+  <h3>Dividends to record</h3>
+  <p class="small muted">These went ex while you held them and no dividend has been recorded since. IDX companies usually pay
+    2–4 weeks after the ex-date; record the cash when it reaches your account (the amount is pre-filled with the estimate after tax).</p>
+  <ul class="plain">
+    {% for e in to_record %}
+    <li class="zone-row">
+      <span><a href="/stock/{{ e.symbol }}">{{ e.symbol }}</a> went ex {{ e.ex_date|date('%d %b') }}
+        {% if e.per_share %}<span class="muted small">· {{ e.per_share|price(e.currency) }}/share × {{ qty(e) }}</span>{% endif %}</span>
+      <form method="post" action="/portfolio/txn" class="row">
+        <input type="hidden" name="kind" value="DIV"><input type="hidden" name="symbol" value="{{ e.symbol }}">
+        <input name="amount" required inputmode="decimal" aria-label="Cash received for {{ e.symbol }}"
+               value="{% if e.net %}{{ '%.0f'|format(e.net) if e.currency == 'IDR' else '%.2f'|format(e.net) }}{% endif %}">
+        <input name="day" type="date" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}" aria-label="Date received">
+        <button type="submit">Record</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="grid">
+  <div class="card wide">
+    <h3>Your dividends, next {{ days }} days</h3>
+    {% if upcoming %}
+    <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Ex-date</th><th>Symbol</th><th></th><th class="r">Per share</th><th class="r">You hold</th>
+        <th class="r">Before tax</th><th class="r">After tax</th><th>Own it by</th></tr></thead>
+      <tbody>
+      {% for e in upcoming %}
+      <tr>
+        <td>{% if e.status == 'expected' %}~{% endif %}{{ e.ex_date|date('%a %d %b') }}</td>
+        <td><a href="/stock/{{ e.symbol }}">{{ e.symbol }}</a></td>
+        <td>{% if e.status == 'expected' %}<span class="pill" title="{{ e.basis }}">estimate</span>{% else %}<span class="pill good">announced</span>{% endif %}</td>
+        <td class="r">{{ e.per_share|price(e.currency) if e.per_share else 'not yet' }}</td>
+        <td class="r">{{ qty(e) }}</td>
+        <td class="r">{% if e.gross is not none %}{{ e.gross|price(e.currency) }} {{ e.currency }}{% else %}–{% endif %}</td>
+        <td class="r">{% if e.net is not none %}{{ e.net|price(e.currency) }} {{ e.currency }}{% else %}–{% endif %}</td>
+        <td class="small">{% if e.status == 'announced' %}close of {{ e.cum_date|date('%a %d %b') }}{% else %}<span class="muted">{{ e.basis }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="muted">Nothing announced or expected for your holdings. Press refresh if dates haven't been fetched yet.</p>{% endif %}
+    <p class="small muted">"Estimate" rows repeat last year's ex-date and amount until the company announces. To receive a dividend
+      you must own the shares at the close of the trading day before the ex-date. Tax: {{ tax['IDR']|num(0) }}% on IDX dividends,
+      {{ tax['USD']|num(0) }}% on US ETF dividends with a W-8BEN form at your broker (30% without).</p>
+  </div>
+
+  <div class="card">
+    <h3>Market calendar</h3>
+    {% if months %}
+    {% for month, rows in months.items() %}
+    <h4>{{ month }}</h4>
+    <ul class="plain cal-list">
+      {% for r in rows %}
+      <li><span class="cal-day">{{ r.day|date('%a %d') }}</span>
+        <span>{{ r.icon }} {% if r.div %}<a href="/stock/{{ r.div.symbol }}">{{ r.div.symbol }}</a> ex-dividend{% if r.div.status == 'expected' %} <span class="muted small">(estimate)</span>{% endif %}{% else %}{{ r.text }}{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+    {% else %}<p class="muted">Nothing in the next {{ days }} days.</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Dividend income</h3>
+    {% if income %}
+    <p>About <b>{{ income_total|idr }}</b> a year before tax (≈ {{ income_net|idr }} after),
+      at the last 12 months' dividends on what you hold now.</p>
+    <table class="data">
+      <thead><tr><th>Symbol</th><th class="r">Per year</th><th class="r">Yield on cost</th></tr></thead>
+      <tbody>
+      {% for r in income %}
+      <tr><td><a href="/stock/{{ r.symbol }}">{{ r.symbol }}</a></td><td class="r">{{ r.gross_idr|idr }}</td>
+        <td class="r">{{ r.yield_on_cost|num(1, '%') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">Past dividends, not a forecast: companies change their payouts, and commodity
+      stocks (coal) swing with prices.</p>
+    {% else %}<p class="muted">No dividend history stored for your holdings yet.</p>{% endif %}
+  </div>
+</div>
+
+<details class="small muted">
+  <summary>Where the dates come from</summary>
+  <ul>
+    <li>Dividends: Yahoo Finance (announced ex-dates and past payments), refreshed with each digest.</li>
+    {% for k, src in sources.items() %}<li>{{ k }}: {{ src }}</li>{% endfor %}
+    {% for n in notes %}<li>{{ n }}</li>{% endfor %}
+  </ul>
+</details>
+<p class="small muted">Research only, not investment advice.</p>
+{% endblock %}

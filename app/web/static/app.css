@@ -186,6 +186,11 @@ ul.bars li { display: grid; grid-template-columns: minmax(0, 1.4fr) 1fr 3.2rem; 
 .bar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; }
 .bar span { display: block; height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
 
+/* calendar */
+.cal-list li { display: grid; grid-template-columns: 4.2rem 1fr; gap: .5rem; border-top: 1px solid var(--grid); }
+.cal-day { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.zone-row form.row input { width: 9rem; flex: 0 0 auto; }
+
 /* portfolio */
 .tiles { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 1rem; }
 .tiles .card { margin-bottom: 0; }

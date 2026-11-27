@@ -175,7 +175,7 @@ def test_security_headers(client):
 def test_pages_have_no_inline_scripts(client, db):
     """The CSP blocks inline scripts, so none may be needed."""
     import re
-    for url in ("/", "/stock/BBCA", "/screens", "/compare?symbols=BBCA", "/status", "/portfolio"):
+    for url in ("/", "/stock/BBCA", "/screens", "/compare?symbols=BBCA", "/status", "/portfolio", "/calendar"):
         html = client.get(url).text
         for tag in re.findall(r"<script\b[^>]*>", html):
             assert "src=" in tag or 'type="application/json"' in tag, (url, tag)

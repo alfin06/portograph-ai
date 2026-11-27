@@ -68,7 +68,7 @@ def build_templates() -> Jinja2Templates:
 
 # --- app ----------------------------------------------------------------------------
 def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None, provider=None,
-               extra_hosts: list[str] | None = None) -> FastAPI:
+               extra_hosts: list[str] | None = None, div_provider=None) -> FastAPI:
     """db and the providers are injectable for tests; by default the real DB and Yahoo.
     extra_hosts adds accepted Host names (tests use 'testserver')."""
     app = FastAPI(title="PortoGraph", docs_url=None, redoc_url=None, openapi_url=None)
@@ -173,6 +173,10 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
     def portfolio(request: Request):
         return page(request, "portfolio.html", nav="portfolio", **views.portfolio(get_db()))
 
+    @app.get("/calendar", response_class=HTMLResponse)
+    def calendar(request: Request):
+        return page(request, "calendar.html", nav="calendar", **views.calendar_page(get_db()))
+
     @app.get("/healthz")
     def healthz():
         return JSONResponse({"ok": True})
@@ -265,6 +269,13 @@ def create_app(db=None, funds_provider=None, val_provider=None, fx_provider=None
             return back("/portfolio", delete_transaction(get_db(), txn_id))
         except PortfolioError as e:
             return back("/portfolio", f"Not deleted: {e}")
+
+    @app.post("/calendar/refresh")
+    def refresh_dividends():
+        from app.analytics import dividends as dv
+        failed = dv.refresh(get_db(), provider=div_provider, force=True)
+        return back("/calendar", f"Couldn't reach Yahoo for {', '.join(failed)}; showing stored dates."
+                    if failed else "Dividend dates refreshed from Yahoo.")
 
     @app.post("/screens/run", response_class=HTMLResponse)
     def run_rule(request: Request, rule: str = Form("")):

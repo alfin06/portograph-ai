@@ -1,0 +1,450 @@
+{
+ "updated": "2026-11-28",
+ "notes": [
+  "Bank Indonesia has not published its 2027 meeting (RDG) dates yet; add them when it does (usually late December).",
+  "FOMC dates are tentative until confirmed at the meeting before. Oct 2027 is listed as a policy strategy meeting.",
+  "IDX holidays for 2027 follow SKB 3 Menteri No. 1205/3/2 Tahun 2026 as reported by IDX Channel and EmitenNews (idx.co.id blocks automated reading); IDX can change them."
+ ],
+ "sources": {
+  "fomc": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+  "bi_rate": "https://www.bi.go.id (2026 RDG schedule)",
+  "us_cpi": "https://www.bls.gov/schedule/news_release/cpi.htm",
+  "us_jobs": "https://www.bls.gov/schedule/news_release/empsit.htm",
+  "idx_closed": "IDX Channel and EmitenNews (2027), Fortune IDN and Metro TV (Dec 2026)",
+  "nyse": "https://www.nyse.com/markets/hours-calendars"
+ },
+ "events": [
+  {
+   "date": "2026-12-04",
+   "kind": "us_jobs",
+   "title": "US jobs report (Nov)",
+   "market": "US"
+  },
+  {
+   "date": "2026-12-09",
+   "kind": "fomc",
+   "title": "FOMC rate decision (with projections)",
+   "market": "US"
+  },
+  {
+   "date": "2026-12-10",
+   "kind": "us_cpi",
+   "title": "US CPI (Nov)",
+   "market": "US"
+  },
+  {
+   "date": "2026-12-16",
+   "kind": "bi_rate",
+   "title": "BI-Rate decision",
+   "market": "IDX"
+  },
+  {
+   "date": "2026-12-24",
+   "kind": "idx_closed",
+   "title": "IDX closed: Christmas collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2026-12-24",
+   "kind": "nyse_early_close",
+   "title": "NYSE closes early (1 pm ET): Christmas Eve",
+   "market": "US"
+  },
+  {
+   "date": "2026-12-25",
+   "kind": "idx_closed",
+   "title": "IDX closed: Christmas",
+   "market": "IDX"
+  },
+  {
+   "date": "2026-12-25",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Christmas",
+   "market": "US"
+  },
+  {
+   "date": "2026-12-31",
+   "kind": "idx_closed",
+   "title": "IDX closed: year-end exchange holiday",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-01-01",
+   "kind": "idx_closed",
+   "title": "IDX closed: New Year's Day",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-01-01",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: New Year's Day",
+   "market": "US"
+  },
+  {
+   "date": "2027-01-05",
+   "kind": "idx_closed",
+   "title": "IDX closed: Isra Mi'raj",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-01-08",
+   "kind": "us_jobs",
+   "title": "US jobs report (Dec)",
+   "market": "US"
+  },
+  {
+   "date": "2027-01-13",
+   "kind": "us_cpi",
+   "title": "US CPI (Dec)",
+   "market": "US"
+  },
+  {
+   "date": "2027-01-18",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Martin Luther King Jr. Day",
+   "market": "US"
+  },
+  {
+   "date": "2027-01-27",
+   "kind": "fomc",
+   "title": "FOMC rate decision",
+   "market": "US"
+  },
+  {
+   "date": "2027-02-05",
+   "kind": "idx_closed",
+   "title": "IDX closed: Chinese New Year collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-02-05",
+   "kind": "us_jobs",
+   "title": "US jobs report (Jan)",
+   "market": "US"
+  },
+  {
+   "date": "2027-02-11",
+   "kind": "us_cpi",
+   "title": "US CPI (Jan)",
+   "market": "US"
+  },
+  {
+   "date": "2027-02-15",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Washington's Birthday",
+   "market": "US"
+  },
+  {
+   "date": "2027-03-05",
+   "kind": "us_jobs",
+   "title": "US jobs report (Feb)",
+   "market": "US"
+  },
+  {
+   "date": "2027-03-08",
+   "kind": "idx_closed",
+   "title": "IDX closed: Nyepi",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-09",
+   "kind": "idx_closed",
+   "title": "IDX closed: Eid al-Fitr collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-10",
+   "kind": "idx_closed",
+   "title": "IDX closed: Eid al-Fitr",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-10",
+   "kind": "us_cpi",
+   "title": "US CPI (Feb)",
+   "market": "US"
+  },
+  {
+   "date": "2027-03-11",
+   "kind": "idx_closed",
+   "title": "IDX closed: Eid al-Fitr",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-12",
+   "kind": "idx_closed",
+   "title": "IDX closed: Eid al-Fitr collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-15",
+   "kind": "idx_closed",
+   "title": "IDX closed: Eid al-Fitr collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-17",
+   "kind": "fomc",
+   "title": "FOMC rate decision",
+   "market": "US"
+  },
+  {
+   "date": "2027-03-25",
+   "kind": "idx_closed",
+   "title": "IDX closed: Good Friday collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-26",
+   "kind": "idx_closed",
+   "title": "IDX closed: Good Friday",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-03-26",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Good Friday",
+   "market": "US"
+  },
+  {
+   "date": "2027-04-02",
+   "kind": "us_jobs",
+   "title": "US jobs report (Mar)",
+   "market": "US"
+  },
+  {
+   "date": "2027-04-13",
+   "kind": "us_cpi",
+   "title": "US CPI (Mar)",
+   "market": "US"
+  },
+  {
+   "date": "2027-04-28",
+   "kind": "fomc",
+   "title": "FOMC rate decision",
+   "market": "US"
+  },
+  {
+   "date": "2027-05-06",
+   "kind": "idx_closed",
+   "title": "IDX closed: Ascension Day",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-05-07",
+   "kind": "us_jobs",
+   "title": "US jobs report (Apr)",
+   "market": "US"
+  },
+  {
+   "date": "2027-05-12",
+   "kind": "us_cpi",
+   "title": "US CPI (Apr)",
+   "market": "US"
+  },
+  {
+   "date": "2027-05-17",
+   "kind": "idx_closed",
+   "title": "IDX closed: Eid al-Adha",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-05-18",
+   "kind": "idx_closed",
+   "title": "IDX closed: Eid al-Adha collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-05-19",
+   "kind": "idx_closed",
+   "title": "IDX closed: Vesak collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-05-20",
+   "kind": "idx_closed",
+   "title": "IDX closed: Vesak",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-05-31",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Memorial Day",
+   "market": "US"
+  },
+  {
+   "date": "2027-06-01",
+   "kind": "idx_closed",
+   "title": "IDX closed: Pancasila Day",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-06-04",
+   "kind": "us_jobs",
+   "title": "US jobs report (May)",
+   "market": "US"
+  },
+  {
+   "date": "2027-06-09",
+   "kind": "fomc",
+   "title": "FOMC rate decision",
+   "market": "US"
+  },
+  {
+   "date": "2027-06-10",
+   "kind": "us_cpi",
+   "title": "US CPI (May)",
+   "market": "US"
+  },
+  {
+   "date": "2027-06-18",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Juneteenth (observed)",
+   "market": "US"
+  },
+  {
+   "date": "2027-07-02",
+   "kind": "us_jobs",
+   "title": "US jobs report (Jun)",
+   "market": "US"
+  },
+  {
+   "date": "2027-07-05",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Independence Day (observed)",
+   "market": "US"
+  },
+  {
+   "date": "2027-07-14",
+   "kind": "us_cpi",
+   "title": "US CPI (Jun)",
+   "market": "US"
+  },
+  {
+   "date": "2027-07-28",
+   "kind": "fomc",
+   "title": "FOMC rate decision",
+   "market": "US"
+  },
+  {
+   "date": "2027-08-06",
+   "kind": "us_jobs",
+   "title": "US jobs report (Jul)",
+   "market": "US"
+  },
+  {
+   "date": "2027-08-11",
+   "kind": "us_cpi",
+   "title": "US CPI (Jul)",
+   "market": "US"
+  },
+  {
+   "date": "2027-08-17",
+   "kind": "idx_closed",
+   "title": "IDX closed: Independence Day",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-09-03",
+   "kind": "us_jobs",
+   "title": "US jobs report (Aug)",
+   "market": "US"
+  },
+  {
+   "date": "2027-09-06",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Labor Day",
+   "market": "US"
+  },
+  {
+   "date": "2027-09-14",
+   "kind": "us_cpi",
+   "title": "US CPI (Aug)",
+   "market": "US"
+  },
+  {
+   "date": "2027-09-15",
+   "kind": "fomc",
+   "title": "FOMC rate decision",
+   "market": "US"
+  },
+  {
+   "date": "2027-10-08",
+   "kind": "us_jobs",
+   "title": "US jobs report (Sep)",
+   "market": "US"
+  },
+  {
+   "date": "2027-10-14",
+   "kind": "us_cpi",
+   "title": "US CPI (Sep)",
+   "market": "US"
+  },
+  {
+   "date": "2027-10-27",
+   "kind": "fomc",
+   "title": "FOMC meeting (policy strategy meeting)",
+   "market": "US"
+  },
+  {
+   "date": "2027-11-05",
+   "kind": "us_jobs",
+   "title": "US jobs report (Oct)",
+   "market": "US"
+  },
+  {
+   "date": "2027-11-10",
+   "kind": "us_cpi",
+   "title": "US CPI (Oct)",
+   "market": "US"
+  },
+  {
+   "date": "2027-11-17",
+   "kind": "fomc",
+   "title": "FOMC rate decision",
+   "market": "US"
+  },
+  {
+   "date": "2027-11-25",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Thanksgiving",
+   "market": "US"
+  },
+  {
+   "date": "2027-11-26",
+   "kind": "nyse_early_close",
+   "title": "NYSE closes early (1 pm ET): day after Thanksgiving",
+   "market": "US"
+  },
+  {
+   "date": "2027-12-03",
+   "kind": "us_jobs",
+   "title": "US jobs report (Nov)",
+   "market": "US"
+  },
+  {
+   "date": "2027-12-10",
+   "kind": "us_cpi",
+   "title": "US CPI (Nov)",
+   "market": "US"
+  },
+  {
+   "date": "2027-12-24",
+   "kind": "idx_closed",
+   "title": "IDX closed: Christmas collective leave",
+   "market": "IDX"
+  },
+  {
+   "date": "2027-12-24",
+   "kind": "nyse_closed",
+   "title": "NYSE closed: Christmas (observed)",
+   "market": "US"
+  },
+  {
+   "date": "2027-12-31",
+   "kind": "idx_closed",
+   "title": "IDX closed: year-end exchange holiday",
+   "market": "IDX"
+  }
+ ]
+}

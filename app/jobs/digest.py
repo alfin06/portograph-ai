@@ -7,12 +7,12 @@ Run from the project root:
 import argparse
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.analytics import portfolio, sentiment, zones
+from app.analytics import dividends, macro_calendar, portfolio, sentiment, zones
 from app.analytics.screener import run_screens
 from app.analytics.snapshot import fx_change, market_snapshots
 from app.jobs import update_fundamentals, update_prices
@@ -43,9 +43,34 @@ def _refresh_period(db: DBManager, market: str) -> str:
     return "1mo"
 
 
+DIV_DAYS = 7      # dividends going ex this soon get a line
+MACRO_DAYS = 3    # rate decisions, data releases and holidays this soon
+
+
+@dataclass
+class ComingUp:
+    went_ex: list          # holdings in this market that went ex on the session day
+    dividends: list        # this market's holdings going ex in the next DIV_DAYS
+    events: list           # macro events and holidays in the next MACRO_DAYS
+    calendar_stale: bool
+
+
+def coming_up(db: DBManager, market: str, session_day: date) -> ComingUp | None:
+    cal = dividends.calendar(db, today=session_day, days=DIV_DAYS, market=market)
+    went_ex = [e for e in cal["upcoming"] if e.ex_date == session_day and e.status == "announced"]
+    # an ex-date on the session day itself shows as 'went ex', not as upcoming
+    upcoming = [e for e in cal["upcoming"] if e.ex_date > session_day]
+    events, _ = macro_calendar.load()
+    soon = macro_calendar.upcoming(events, session_day + timedelta(days=1), MACRO_DAYS - 1)
+    stale = macro_calendar.needs_update(events, session_day)
+    if not (went_ex or upcoming or soon or stale):
+        return None
+    return ComingUp(went_ex, upcoming, soon, stale)
+
+
 def run(market: str, notifier, db: DBManager | None = None, provider=None,
         session_date: date | None = None, refresh: bool = True,
-        fund_provider=None, record_hits: bool = True) -> DigestResult:
+        fund_provider=None, record_hits: bool = True, div_provider=None) -> DigestResult:
     """session_date: the trading day the digest is for. When given and no instrument has
     a bar for that day (holiday, or the feed is late), nothing is sent and the caller may
     retry. When None, the digest covers the latest stored session."""
@@ -68,6 +93,12 @@ def run(market: str, notifier, db: DBManager | None = None, provider=None,
             sentiment.refresh(db, provider, market)
         except Exception:
             log.exception("%s: sentiment inputs refresh failed", market)
+        try:  # holdings only, once a day
+            failed = dividends.refresh(db, market=market, provider=div_provider)
+            if failed:
+                log.warning("%s: no dividend data for %s", market, ", ".join(failed))
+        except Exception:
+            log.exception("%s: dividends refresh failed", market)
 
     # A catch-up digest (sent late) still reports the session it is for
     snaps = market_snapshots(db, market, until=None if session_date is None else pd.Timestamp(session_date))
@@ -96,8 +127,13 @@ def run(market: str, notifier, db: DBManager | None = None, provider=None,
     except Exception:
         log.exception("%s: portfolio section failed", market)
         port = None
+    try:
+        coming = coming_up(db, market, target.date())
+    except Exception:
+        log.exception("%s: calendar failed", market)
+        coming = None
     text = format_digest(market, snaps, target, fx=fx_change(db.get_fx_history("USDIDR", days=10)),
-                         screens=screens, mood=mood, zones=zone_events, portfolio=port)
+                         screens=screens, mood=mood, zones=zone_events, portfolio=port, coming=coming)
     notifier.send(text)
     return DigestResult("sent", text)
 

@@ -281,3 +281,29 @@ def portfolio(db, today: date | None = None) -> dict:
             "watched": [i["symbol"] for i in db.get_instruments()],
             "today": (today or date.today()).isoformat(), "lot": pf.LOT,
             "fee_pct": pf.DEFAULT_FEE_PCT, "max_stock": pf.MAX_STOCK_PCT, "max_sector": pf.MAX_SECTOR_PCT}
+
+
+# --- calendar ------------------------------------------------------------------------
+CAL_DAYS = 90
+
+
+def calendar_page(db, today: date | None = None) -> dict:
+    from app.analytics import dividends as dv
+    from app.analytics import macro_calendar as mc
+    today = today or date.today()
+    cal = dv.calendar(db, today=today, days=CAL_DAYS)
+    events, meta = mc.load()
+    months: dict[str, list] = {}
+    rows = [{"day": e.day, "icon": e.icon, "text": e.title, "kind": e.kind, "div": None}
+            for e in mc.upcoming(events, today, CAL_DAYS)]
+    rows += [{"day": e.ex_date, "icon": "💰", "text": f"{e.symbol} ex-dividend", "kind": "dividend", "div": e}
+             for e in cal["upcoming"]]
+    for r in sorted(rows, key=lambda r: (r["day"], r["kind"] != "dividend")):
+        months.setdefault(f"{r['day']:%B %Y}", []).append(r)
+    income = [r for r in dv.yearly_income(db, today=today) if r["gross_idr"] > 0]
+    fetched = [db.get_setting(f"dividends_fetched:{i['symbol']}") for i in db.get_instruments() if i["is_holding"]]
+    return {"months": months, "upcoming": cal["upcoming"], "to_record": cal["to_record"], "income": income,
+            "income_total": sum(r["gross_idr"] for r in income), "income_net": sum(r["net_idr"] for r in income),
+            "today": today, "days": CAL_DAYS, "notes": meta.get("notes", []), "sources": meta.get("sources", {}),
+            "covered_until": mc.covered_until(events), "stale": mc.needs_update(events, today),
+            "divs_fetched": min((f for f in fetched if f), default=None), "tax": dv.TAX_PCT}

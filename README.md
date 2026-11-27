@@ -124,6 +124,14 @@ Portfolio tracking
 - Each market digest has a 💼 Portfolio section: total value, how that market's holdings did in the session, the change over the past week (new buys and sales are taken out, so only gains count), unrealised profit, a 📈/📉 line for any holding that moved 5% or more, and concentration warnings, shown once when they appear and again when they clear.
 - Each digest also saves the day's portfolio value (one row per date; the US digest updates the same date later). The dashboard's Portfolio page charts value against cost once there are two days of history.
 
+Dividend and market calendar
+- `/dividends`: ex-dividend dates for your holdings in the next 45 days, with the cash you'd get for the shares you hold (before and after tax), the last day to own the shares, and ex-dates that passed while you held them with a ready `/div` command to record the cash when it arrives. Also an estimate of a year's dividend income from the last 12 months' payments.
+- Dates come from Yahoo: announced IDX ex-dates (with the amount once published) and past payments. With no announcement yet, last year's date and amount are shown as an estimate (`~`). Yahoo has no IDX payment dates; the cash usually arrives 2-4 weeks after the ex-date.
+- Tax shown: 10% on IDX dividends, 15% on US ETF dividends with a W-8BEN form at your broker (30% without).
+- `/calendar [days]`: rate decisions (Fed, Bank Indonesia), US CPI and jobs reports, IDX and NYSE holidays, and your ex-dividend dates. The macro dates are in `app/reference/calendar.json`, copied from the official schedules (sources are in the file); update it once a year. Bank Indonesia's 2027 dates weren't published yet when it was written. `/calendar` and the digests warn a month before it runs out.
+- Each digest lists that market's holdings going ex in the next 7 days, a "went ex today" line with the `/div` command, and macro events in the next 3 days. Dividends are refreshed from Yahoo once a day, for holdings only.
+- The dashboard's Calendar page shows the same for the next 90 days, with a form to record each dividend.
+
 Telegram commands
 - `/digest idx|us` latest close digest
 - `/fund BBCA` fundamentals and price snapshot
@@ -134,6 +142,7 @@ Telegram commands
 - `/etf VOO`, `/overlap VOO QQQM`, `/compare BBCA VOO 1y` ETF details, ETF similarity, returns in IDR and USD
 - `/value BBCA` cheap or expensive vs its own history · `/zone`, `/zones`, `/delzone` buy zones · `/capital`, `/size` position size
 - `/portfolio` holdings and profit · `/buy`, `/sell`, `/div` record · `/txns`, `/deltxn` list or delete · `/price BBCA` quick quote
+- `/dividends` upcoming ex-dates and income · `/calendar [days]` rate decisions, US data, holidays
 - `/portofolio` (old spelling) is the earlier AI swing-trade list, kept as it was
 - `/status` is everything running? last digests, newest prices, last backup
 
