@@ -57,9 +57,41 @@ def format_zones(events) -> str:
     return "\n".join(lines)
 
 
+def _idr(v: float) -> str:
+    """Same style as /portfolio: 'Rp 1,002.9 juta', 'Rp 350 rb'."""
+    a = abs(v)
+    return f"Rp {a / 1e6:,.1f} juta" if a >= 1e6 else f"Rp {a / 1e3:,.0f} rb"
+
+
+def _signed(v: float) -> str:
+    return ("+" if v >= 0 else "−") + _idr(v)
+
+
+def format_portfolio(market: str, sec) -> str:
+    lines = [f"<b>💼 Portfolio</b> {_idr(sec.value_idr)}"]
+    if sec.market_change_idr is not None:
+        pct = f" ({sec.market_change_pct:+.1f}%)" if sec.market_change_pct is not None else ""
+        lines.append(f"{market} holdings today {_signed(sec.market_change_idr)}{pct}")
+    if sec.week_change_idr is not None:
+        pct = f" ({sec.week_change_pct:+.1f}%)" if sec.week_change_pct is not None else ""
+        lines.append(f"Past week {_signed(sec.week_change_idr)}{pct}")
+    unreal = f" ({sec.unrealised_pct:+.1f}%)" if sec.unrealised_pct is not None else ""
+    lines.append(f"Unrealised {_signed(sec.unrealised_idr)}{unreal}")
+    for sym, pct, idr in sec.big_moves:
+        lines.append(f"{'📈' if pct > 0 else '📉'} <b>{escape(sym)}</b> {pct:+.1f}% ({_signed(idr)})")
+    for text in sec.new_flags:
+        lines.append(f"⚠️ {escape(text)}")
+    for name in sec.cleared:
+        lines.append(f"✅ {escape(name)} is back within the concentration limit")
+    if sec.still_flagged:
+        lines.append(f"<i>{sec.still_flagged} concentration warning{'s' if sec.still_flagged > 1 else ''} "
+                     f"still open, see /portfolio</i>")
+    return "\n".join(lines)
+
+
 def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp,
                   fx: tuple[float | None, float | None] = (None, None), screens=None,
-                  mood=None, zones=None) -> str:
+                  mood=None, zones=None, portfolio=None) -> str:
     title = f"<b>{MARKET_TITLE.get(market, market)} · {session_date:%a %d %b %Y}</b>"
     if not snaps:
         return f"{title}\nNo price data for this market. Check the watchlist or the data feed."
@@ -77,6 +109,8 @@ def format_digest(market: str, snaps: list[Snapshot], session_date: pd.Timestamp
     if mood is not None:
         parts.append(format_mood(mood))
     parts.append("<pre>" + escape("\n".join(rows)) + "</pre>")
+    if portfolio is not None:
+        parts.append(format_portfolio(market, portfolio))
 
     movers = [s for s in snaps if s.chg_1d is not None and s.date == session_date]
     if len(movers) >= 2:

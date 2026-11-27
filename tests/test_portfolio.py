@@ -199,3 +199,70 @@ def test_portfolio_page_and_forms(client, pdb):
 def test_portfolio_forms_need_same_origin(client, pdb):
     r = client.post("/portfolio/txn", data={"kind": "BUY", "symbol": "BBCA", "qty": "1", "price": "1"})
     assert r.status_code == 403 and pdb.get_transactions() == []
+
+
+# --- daily digest and history ---------------------------------------------------------------
+def test_digest_section_reports_flags_once(pdb):
+    c.cmd_buy(pdb, ["BBCA", "10", "8950", "20/11", "fee=0"], today=TODAY)
+    c.cmd_buy(pdb, ["VOO", "1", "500", "2026-10-02", "fee=0"], today=TODAY)
+    day = pd.Timestamp("2026-11-26")
+    first = pf.digest_section(pdb, "IDX", day)
+    assert any("BBCA" in f for f in first.new_flags) and first.still_flagged == 0
+    assert first.market_change_idr == pytest.approx(1000 * 100)       # IDX holdings only
+    again = pf.digest_section(pdb, "IDX", day)
+    assert again.new_flags == [] and again.still_flagged == len(first.new_flags)
+    # a big ETF buy dilutes BBCA below the limit: the warning clears
+    c.cmd_buy(pdb, ["VOO", "100", "540", "2026-11-26", "fee=0"], today=TODAY)
+    later = pf.digest_section(pdb, "US", day)
+    assert "BBCA" in later.cleared
+
+
+def test_dry_run_records_nothing(pdb):
+    c.cmd_buy(pdb, ["BBCA", "10", "8950", "20/11"], today=TODAY)
+    pf.digest_section(pdb, "IDX", pd.Timestamp("2026-11-26"), record=False)
+    assert pdb.get_portfolio_history() == [] and pdb.get_setting(pf.FLAGS_SETTING) is None
+
+
+def test_snapshot_one_row_per_day(pdb):
+    c.cmd_buy(pdb, ["BBCA", "10", "8950", "20/11", "fee=0"], today=TODAY)
+    port = pf.build(pdb)
+    assert pf.record_snapshot(pdb, port) == "2026-11-26"
+    pf.record_snapshot(pdb, port)
+    rows = pdb.get_portfolio_history()
+    assert len(rows) == 1 and rows[0]["value_idr"] == pytest.approx(9_200_000)
+
+
+def test_big_moves_and_week_change_ignore_new_money(pdb):
+    pdb.upsert_price_bars("BBCA", bars([9000.0, 9100.0, 9700.0]))          # +6.6% on the last day
+    c.cmd_buy(pdb, ["BBCA", "10", "8950", "20/11", "fee=0"], today=TODAY)
+    pdb.upsert_portfolio_day("2026-11-18", 9_000_000, 8_950_000, 50_000, 0, 0, 16500)
+    c.cmd_buy(pdb, ["BBRI", "10", "4000", "26/11", "fee=0"], today=TODAY)  # no BBRI price: left out
+    sec = pf.digest_section(pdb, "IDX", pd.Timestamp("2026-11-26"))
+    assert sec.big_moves and sec.big_moves[0][0] == "BBCA" and sec.big_moves[0][1] > 5
+    # gain since the 18th = unrealised now (9.7m - 8.95m) minus unrealised then (50k)
+    assert sec.week_change_idr == pytest.approx(750_000 - 50_000)
+
+
+def test_digest_message_has_portfolio(pdb):
+    from app.jobs import digest
+
+    c.cmd_buy(pdb, ["BBCA", "10", "8950", "20/11"], today=TODAY)
+
+    class Out:
+        text = None
+
+        def send(self, text, parse_mode="HTML"):
+            self.text = text
+    out = Out()
+    digest.run("IDX", out, db=pdb, refresh=False, record_hits=False)
+    assert "💼 Portfolio" in out.text and "IDX holdings today" in out.text
+    assert pdb.get_portfolio_history() == []                      # a dry run stores nothing
+
+
+def test_value_chart_appears_with_two_days(client, pdb):
+    c.cmd_buy(pdb, ["BBCA", "10", "8950", "20/11"], today=TODAY)
+    assert "port-chart" not in client.get("/portfolio").text
+    pdb.upsert_portfolio_day("2026-11-25", 9_000_000, 8_960_000, 40_000, 0, 0, 16500)
+    pdb.upsert_portfolio_day("2026-11-26", 9_200_000, 8_960_000, 240_000, 0, 0, 16600)
+    html = client.get("/portfolio").text
+    assert 'id="port-chart"' in html and 'id="port-data"' in html

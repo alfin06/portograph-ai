@@ -204,3 +204,16 @@ CREATE TABLE IF NOT EXISTS transactions (
     created TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_symbol ON transactions (symbol, date, id);
+
+-- One row per day: the portfolio's value at that day's closes. Written by each market
+-- digest; the US digest later overwrites the same date so a day ends with both closes.
+CREATE TABLE IF NOT EXISTS portfolio_history (
+    date TEXT PRIMARY KEY,                  -- YYYY-MM-DD of the latest close used
+    value_idr REAL NOT NULL,
+    cost_idr REAL NOT NULL,                 -- open positions' cost at buy-day rates
+    unrealised_idr REAL NOT NULL,
+    realised_idr REAL NOT NULL,             -- running totals
+    income_idr REAL NOT NULL,
+    usdidr REAL,
+    recorded_at TEXT NOT NULL
+);

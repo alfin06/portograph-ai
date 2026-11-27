@@ -275,7 +275,9 @@ def portfolio(db, today: date | None = None) -> dict:
     from app.analytics import portfolio as pf
     port = pf.build(db)
     txns = list(reversed(db.get_transactions()))
-    return {"port": port, "txns": txns[:100], "more_txns": max(0, len(txns) - 100),
+    history = [{"time": h["date"], "value": round(h["value_idr"]), "cost": round(h["cost_idr"])}
+               for h in db.get_portfolio_history()]
+    return {"port": port, "history": history, "txns": txns[:100], "more_txns": max(0, len(txns) - 100),
             "watched": [i["symbol"] for i in db.get_instruments()],
             "today": (today or date.today()).isoformat(), "lot": pf.LOT,
             "fee_pct": pf.DEFAULT_FEE_PCT, "max_stock": pf.MAX_STOCK_PCT, "max_sector": pf.MAX_SECTOR_PCT}

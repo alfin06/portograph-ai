@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Portfolio · PortoGraph{% endblock %}
+{% block head %}<script src="/static/vendor/lightweight-charts-4.2.0.js?v={{ v }}" defer></script>
+{% endblock %}
 {% macro qty(p) -%}
 {% if p.market == 'IDX' %}{{ p.lots|num(0) }} lots{% else %}{{ '%g'|format(p.shares) }} sh{% endif %}
 {%- endmacro %}
@@ -22,6 +24,21 @@
   <div class="card tile"><span class="muted small">Realised + dividends</span>
     <b class="big {{ (port.realised_idr + port.income_idr)|tone }}">{{ (port.realised_idr + port.income_idr)|idrs }}</b>
     <span class="small muted">sales {{ port.realised_idr|idrs }} · dividends {{ port.income_idr|idr }}</span></div>
+</div>
+{% endif %}
+
+{% if port.positions %}
+<div class="card">
+  <h3>Value over time</h3>
+  {% if history|length >= 2 %}
+  <div id="port-chart" class="chart short" aria-label="Portfolio value by day"></div>
+  <script type="application/json" id="port-data">{{ history|tojson }}</script>
+  <p class="legend small muted"><span class="key port-value"></span>Value at each day's closes
+    <span class="key band-mid"></span>Cost of what you held then. The gap is unrealised profit; a step in the cost line is a buy or sale.</p>
+  {% else %}
+  <p class="muted small">The chart starts once there are two days of history: each market digest saves the day's value
+    {% if history %}(first point {{ history[0].time }}){% endif %}.</p>
+  {% endif %}
 </div>
 {% endif %}
 

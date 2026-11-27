@@ -152,6 +152,7 @@ details.inline-details summary { display: inline; cursor: pointer; color: var(--
 .key.band-mid { border-color: var(--band-mid); }
 .key.band-rich { border-color: var(--band-rich); }
 .key.zone { border-top-style: solid; border-color: var(--zone); }
+.key.port-value { border-top-style: solid; border-color: var(--series-1); }
 .chart-tip {
   position: absolute; z-index: 5; pointer-events: none; display: none;
   background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;

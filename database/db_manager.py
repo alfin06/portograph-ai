@@ -430,6 +430,22 @@ class DBManager:
         with self._get_connection() as conn:
             conn.execute("UPDATE instruments SET is_holding = ? WHERE symbol = ?", (int(held), symbol.upper()))
 
+    def upsert_portfolio_day(self, day: str, value_idr: float, cost_idr: float, unrealised_idr: float,
+                             realised_idr: float, income_idr: float, usdidr: float | None) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO portfolio_history (date, value_idr, cost_idr, unrealised_idr, realised_idr, "
+                "income_idr, usdidr, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(date) DO UPDATE SET value_idr=excluded.value_idr, cost_idr=excluded.cost_idr, "
+                "unrealised_idr=excluded.unrealised_idr, realised_idr=excluded.realised_idr, "
+                "income_idr=excluded.income_idr, usdidr=excluded.usdidr, recorded_at=excluded.recorded_at",
+                (day, value_idr, cost_idr, unrealised_idr, realised_idr, income_idr, usdidr,
+                 datetime.now().isoformat(timespec="seconds")))
+
+    def get_portfolio_history(self) -> list[dict]:
+        with self._get_connection() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM portfolio_history ORDER BY date").fetchall()]
+
     def get_fx_on(self, pair: str, day: str) -> float | None:
         """Rate on that day or the last one before it; the first one after if none before."""
         with self._get_connection() as conn:

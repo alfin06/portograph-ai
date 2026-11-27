@@ -181,6 +181,33 @@
     });
   }
 
+  // Portfolio value per day (one point per digest) against what it cost
+  function portfolioChart(elId, dataId) {
+    const el = document.getElementById(elId);
+    const rows = JSON.parse(document.getElementById(dataId).textContent);
+    const juta = (v) => `Rp ${(v / 1e6).toLocaleString('en-US', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} juta`;
+    themed(() => {
+      const chart = LC.createChart(el, { ...baseOptions(), localization: { priceFormatter: (v) => (v / 1e6).toFixed(0) + ' jt' } });
+      const value = chart.addLineSeries({ color: css('--series-1'), lineWidth: 2, priceLineVisible: false, title: 'Value' });
+      const cost = chart.addLineSeries({ color: css('--band-mid'), lineWidth: 1, lineStyle: LC.LineStyle.Dashed,
+                                         priceLineVisible: false, lastValueVisible: false, title: 'Cost' });
+      value.setData(rows.map((r) => ({ time: r.time, value: r.value })));
+      cost.setData(rows.map((r) => ({ time: r.time, value: r.cost })));
+      chart.timeScale().fitContent();
+      requestAnimationFrame(() => requestAnimationFrame(() => chart.timeScale().fitContent()));
+      const tip = tooltip(el);
+      chart.subscribeCrosshairMove((param) => {
+        const v = param.time && param.point && param.seriesData.get(value);
+        const c = v && param.seriesData.get(cost);
+        if (!v || !c) { tip.hide(); return; }
+        const gain = v.value - c.value;
+        tip.show(`<b>${param.time}</b><br>Value <b>${juta(v.value)}</b><br>Cost ${juta(c.value)}<br>` +
+                 `Unrealised ${gain >= 0 ? '+' : '−'}${juta(Math.abs(gain))}`, param.point);
+      });
+      return () => { tip.remove(); chart.remove(); };
+    });
+  }
+
   // Forms with data-confirm ask before submitting (e.g. deleting a screen)
   document.addEventListener('submit', (e) => {
     const msg = e.target.dataset && e.target.dataset.confirm;
@@ -192,5 +219,6 @@
     if (!LC) return;
     if (document.getElementById('chart-data')) priceChart('chart', 'chart-data');
     if (document.getElementById('cmp-data')) compareChart('cmp-chart', 'cmp-data');
+    if (document.getElementById('port-data')) portfolioChart('port-chart', 'port-data');
   });
 })();

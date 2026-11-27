@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.analytics import sentiment, zones
+from app.analytics import portfolio, sentiment, zones
 from app.analytics.screener import run_screens
 from app.analytics.snapshot import fx_change, market_snapshots
 from app.jobs import update_fundamentals, update_prices
@@ -91,8 +91,13 @@ def run(market: str, notifier, db: DBManager | None = None, provider=None,
     except Exception:
         log.exception("%s: buy-zone check failed", market)
         zone_events = []
+    try:
+        port = portfolio.digest_section(db, market, target, record=record_hits)
+    except Exception:
+        log.exception("%s: portfolio section failed", market)
+        port = None
     text = format_digest(market, snaps, target, fx=fx_change(db.get_fx_history("USDIDR", days=10)),
-                         screens=screens, mood=mood, zones=zone_events)
+                         screens=screens, mood=mood, zones=zone_events, portfolio=port)
     notifier.send(text)
     return DigestResult("sent", text)
 

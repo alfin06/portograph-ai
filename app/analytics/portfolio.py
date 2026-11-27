@@ -128,6 +128,7 @@ class Portfolio:
     by_currency: list[tuple[str, float]] = field(default_factory=list)
     by_market: list[tuple[str, float]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    flags: dict[str, str] = field(default_factory=dict)   # warning key ('stock:BBRI') -> text
     as_of: pd.Timestamp | None = None
     capital_idr: float | None = None
 
@@ -295,12 +296,93 @@ def build(db) -> Portfolio:
         port.by_market = _shares_of([(p.market, p.value_idr) for p in priced], port.value_idr)
         for p in priced:
             if p.asset_type != "ETF" and p.weight > MAX_STOCK_PCT:
-                port.warnings.append(f"{p.symbol} is {p.weight:.1f}% of the portfolio "
-                                     f"(above {MAX_STOCK_PCT:.0f}% in one stock).")
+                port.flags[f"stock:{p.symbol}"] = (f"{p.symbol} is {p.weight:.1f}% of the portfolio "
+                                                   f"(above {MAX_STOCK_PCT:.0f}% in one stock).")
         for name, w in port.by_sector:
             if not name.startswith("ETF") and name != "Unknown" and w > MAX_SECTOR_PCT:
-                port.warnings.append(f"{name} is {w:.1f}% of the portfolio "
-                                     f"(above {MAX_SECTOR_PCT:.0f}% in one sector).")
+                port.flags[f"sector:{name}"] = (f"{name} is {w:.1f}% of the portfolio "
+                                                f"(above {MAX_SECTOR_PCT:.0f}% in one sector).")
+        port.warnings.extend(port.flags.values())
     port.positions = sorted(open_, key=lambda p: -(p.value_idr or 0))
     port.closed.sort(key=lambda p: p.symbol)
     return port
+
+
+# --- daily digest ---------------------------------------------------------------------
+MOVE_ALERT_PCT = 5.0          # a holding moving this much in one session gets its own line
+FLAGS_SETTING = "portfolio_flags"
+
+
+@dataclass
+class DigestSection:
+    value_idr: float
+    unrealised_idr: float
+    unrealised_pct: float | None
+    market_change_idr: float | None       # this market's holdings, this session
+    market_change_pct: float | None
+    big_moves: list[tuple[str, float, float]]    # (symbol, % move, IDR change)
+    new_flags: list[str]
+    still_flagged: int
+    cleared: list[str]                    # keys like 'stock:BBRI', shown as names
+    week_change_idr: float | None = None  # vs the snapshot about a week earlier
+    week_change_pct: float | None = None
+
+
+def record_snapshot(db, port: Portfolio) -> str | None:
+    """Store today's value; the date is the newest close used. Returns that date."""
+    if not port.positions or port.as_of is None:
+        return None
+    day = f"{port.as_of:%Y-%m-%d}"
+    db.upsert_portfolio_day(day, port.value_idr, port.cost_idr, port.unrealised_idr,
+                            port.realised_idr, port.income_idr, port.usdidr)
+    return day
+
+
+def _week_change(db, port: Portfolio):
+    hist = db.get_portfolio_history()
+    if port.as_of is None or not hist:
+        return None, None
+    cutoff = f"{port.as_of - pd.Timedelta(days=7):%Y-%m-%d}"
+    before = [h for h in hist if h["date"] <= cutoff]
+    if not before:
+        return None, None
+    then = before[-1]
+    # take out money put in or taken out since then, so a new buy isn't counted as a gain
+    gain = (port.value_idr - port.cost_idr + port.realised_idr + port.income_idr) - \
+           (then["value_idr"] - then["cost_idr"] + then["realised_idr"] + then["income_idr"])
+    return gain, (gain / then["value_idr"] * 100 if then["value_idr"] > 0 else None)
+
+
+def digest_section(db, market: str, session_date: pd.Timestamp, record: bool = True) -> DigestSection | None:
+    """The portfolio part of a market digest. With record=True (real digests, not dry runs)
+    the day's value is stored and the warning list remembered, so the next digest only
+    reports warnings that are new or cleared."""
+    import json
+
+    port = build(db)
+    if not port.positions:
+        return None
+    if record:
+        record_snapshot(db, port)
+    mine = [p for p in port.positions if p.market == market and p.close_date == session_date
+            and p.day_change_idr is not None]
+    change = sum(p.day_change_idr for p in mine) if mine else None
+    before = sum(p.value_idr - p.day_change_idr for p in mine) if mine else 0
+    moves = sorted(((p.symbol, p.day_change_pct, p.day_change_idr) for p in mine
+                    if p.day_change_pct is not None and abs(p.day_change_pct) >= MOVE_ALERT_PCT),
+                   key=lambda m: -abs(m[1]))
+
+    try:
+        seen = set(json.loads(db.get_setting(FLAGS_SETTING, "[]")))
+    except (ValueError, TypeError):
+        seen = set()
+    now = set(port.flags)
+    if record:
+        db.set_setting(FLAGS_SETTING, json.dumps(sorted(now)))
+    week, week_pct = _week_change(db, port)
+    return DigestSection(
+        value_idr=port.value_idr, unrealised_idr=port.unrealised_idr, unrealised_pct=port.unrealised_pct,
+        market_change_idr=change, market_change_pct=change / before * 100 if mine and before > 0 else None,
+        big_moves=moves, new_flags=[port.flags[k] for k in sorted(now - seen)],
+        still_flagged=len(now & seen), cleared=[k.split(":", 1)[1] for k in sorted(seen - now)],
+        week_change_idr=week, week_change_pct=week_pct)

@@ -121,6 +121,8 @@ Portfolio tracking
 - `/price BBCA`: latest close and daily change, 52-week range, the nearest buy zone and your position.
 - The dashboard's Portfolio page shows the same, with forms to record trades and dividends; the Overview page shows a one-line summary.
 - Stocks already marked as holdings (`hold`) but with no transactions are listed so you can add their buys. Recording trades keeps the holding flag in step.
+- Each market digest has a 💼 Portfolio section: total value, how that market's holdings did in the session, the change over the past week (new buys and sales are taken out, so only gains count), unrealised profit, a 📈/📉 line for any holding that moved 5% or more, and concentration warnings, shown once when they appear and again when they clear.
+- Each digest also saves the day's portfolio value (one row per date; the US digest updates the same date later). The dashboard's Portfolio page charts value against cost once there are two days of history.
 
 Telegram commands
 - `/digest idx|us` latest close digest
