@@ -40,6 +40,8 @@ that nobody else can read your holdings, capital or keys, or make the app act fo
 - Screen rules are parsed against an allow-list of fields and comparisons and are
   never run as code.
 - The LLM's rule suggestions (`/reflect`) are applied only when you press Approve.
+- No data goes to the LLM provider while `AI_ENABLED` is off (the default): the agents
+  refuse to create a client.
 
 **Dependencies**
 - `requirements.lock` pins the exact versions that were tested, and Docker installs

@@ -12,6 +12,7 @@ log = logging.getLogger("bot")
 
 from database.db_manager import DBManager
 from agents.critic_agent import CriticAgent
+from core import config
 from core.config import TELEGRAM_CHAT_ID
 import functools
 
@@ -77,7 +78,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"/calendar - Rate decisions, US data, market holidays\n"
         f"/benchmark - Your portfolio vs IHSG and the S&P 500\n"
         f"/portofolio - Old AI swing trades (ACTIVE)\n"
-        f"/reflect - Run Critic Agent analysis\n"
+        f"/reflect - Critic Agent analysis (paid AI, {'on' if config.AI_ENABLED else 'switched off'})\n"
         f"/digest idx|us - Latest market close digest\n"
         f"/fund SYM - Fundamentals for a watched symbol\n"
         f"/watch SYM idx|us [etf] [hold] - Add to watchlist\n"
@@ -199,6 +200,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @owner_only
 async def reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Triggers the Critic Agent to review past trades and propose new rules."""
+    if not config.AI_ENABLED:
+        await update.message.reply_text(config.AI_OFF_MESSAGE)
+        return
     await update.message.reply_text("🔍 Critic Agent is analyzing your trade history. Please wait...")
     
     critic = CriticAgent()

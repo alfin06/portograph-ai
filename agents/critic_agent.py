@@ -24,6 +24,8 @@ Return a structured JSON output:
 
 class CriticAgent:
     def __init__(self):
+        from core.config import require_llm
+        require_llm()   # stops here while AI_ENABLED is off: no paid call is possible
         load_dotenv()
         
         # Consistent with your Forge API setup

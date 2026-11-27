@@ -165,6 +165,7 @@ Running from mainland China: Telegram and Yahoo Finance need a VPN that stays co
 Notes & tips
 - Keep `dynamic_rules.json` under version control to track rule changes.
 - Use the Critic Agent via Telegram (`/reflect`) to propose rule updates and review them before committing.
+- Paid AI calls are switched off by default. `/reflect` and the crypto screener (`modules/crypto`) are the only parts that call the AI model (Forge / TensorBlock); they refuse to run until you set `AI_ENABLED=true` in `.env` and restart. Everything else (digests, portfolio, dashboard, other commands) uses no AI model.
 - Once `TELEGRAM_CHAT_ID` is set, the bot ignores every other chat.
 
 Troubleshooting

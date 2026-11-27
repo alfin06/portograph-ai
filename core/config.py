@@ -20,6 +20,11 @@ TELEGRAM_CHAT_ID = _env("TELEGRAM_CHAT_ID")
 FORGE_API_KEY = _env("FORGE_API_KEY")
 FORGE_BASE_URL = _env("FORGE_BASE_URL")
 LLM_MODEL = _env("MODEL_NAME", "tensorblock/gpt-5-mini")
+# Paid AI calls (Forge / TensorBlock) are off unless AI_ENABLED=true in .env.
+# Only /reflect and the hand-run crypto screener use them.
+AI_ENABLED = _env("AI_ENABLED", "false").lower() in ("1", "true", "yes")
+AI_OFF_MESSAGE = ("AI analysis is switched off, so no paid AI calls are made. "
+                  "Set AI_ENABLED=true in .env and restart to turn it on.")
 
 # --- Modules ---
 ENABLE_CRYPTO = _env("ENABLE_CRYPTO", "false").lower() in ("1", "true", "yes")
@@ -77,6 +82,12 @@ def require_telegram() -> None:
         raise RuntimeError("TELEGRAM_BOT_TOKEN missing in .env")
 
 
+class AIDisabled(RuntimeError):
+    """Raised before any paid AI client is created while AI_ENABLED is off."""
+
+
 def require_llm() -> None:
+    if not AI_ENABLED:
+        raise AIDisabled(AI_OFF_MESSAGE)
     if not FORGE_API_KEY or not FORGE_BASE_URL:
         raise RuntimeError("FORGE_API_KEY / FORGE_BASE_URL missing in .env")

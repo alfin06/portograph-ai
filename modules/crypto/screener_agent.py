@@ -10,6 +10,8 @@ from core.config import RULES_PATH, FORGE_API_KEY, FORGE_BASE_URL, LLM_MODEL
 
 class ScreenerAgent:
     def __init__(self):
+        from core.config import require_llm
+        require_llm()   # stops here while AI_ENABLED is off: no paid call is possible
         load_dotenv()
         # Initialize for Forge (gpt-5-mini)
         self.llm = ChatOpenAI(
